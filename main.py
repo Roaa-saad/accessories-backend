@@ -43,6 +43,21 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
+def clear_uploads_folder(folder_path=UPLOAD_DIR):
+    if not os.path.exists(folder_path):
+        return 0
+
+    deleted_files = 0
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+            deleted_files += 1
+
+    return deleted_files
+
+
+
 # ================= DATABASE =================
 Base.metadata.create_all(bind=engine)
 
@@ -57,6 +72,16 @@ def get_db():
 # =================================================
 # ================= ADMIN =========================
 # =================================================
+
+
+@app.delete("/admin/clear-uploads")
+def clear_uploads():
+    deleted_count = clear_uploads_folder()
+    return {
+        "detail": "Uploads folder cleared successfully",
+        "deleted_files": deleted_count
+    }
+
 
 # -------- ADD CATEGORY --------
 class CategoryCreate(BaseModel):
