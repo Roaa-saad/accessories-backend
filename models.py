@@ -36,15 +36,35 @@ class Admin(Base):
 
 
 # ================= PRODUCT =================
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    ForeignKey,
+    Text
+)
+from sqlalchemy.orm import relationship
+from database import Base
+
+
 class Product(Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
+
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+
     price = Column(Float, nullable=False)
+    discount_price = Column(Float, nullable=True)
+
     quantity = Column(Integer, nullable=False)
     sold_out = Column(Boolean, default=False)
+
+    # ⭐ FEATURED (الجديد)
+    featured = Column(Boolean, default=False)
 
     category_id = Column(Integer, ForeignKey("categories.id"))
     category = relationship("Category", back_populates="products")

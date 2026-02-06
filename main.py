@@ -114,9 +114,11 @@ async def add_product(
     name: str = Form(...),
     description: Optional[str] = Form(None),
     price: float = Form(...),
+    discount_price: Optional[float] = Form(None),
     quantity: int = Form(...),
     category_name: str = Form(...),
     images: List[UploadFile] = File(...),
+    featured: Optional[bool] = Form(False),
     db: Session = Depends(get_db)
 ):
     category = db.query(Category).filter(Category.name == category_name).first()
@@ -130,9 +132,11 @@ async def add_product(
         name=name,
         description=description,
         price=price,
+        discount_price=discount_price,
         quantity=quantity,
         sold_out=quantity == 0,
         category_id=category.id,
+        featured=featured, 
         image_pos_x=50,
         image_pos_y=50,
         image_scale=1
@@ -159,16 +163,18 @@ async def add_product(
     db.commit()
     return {"detail": "Product created successfully"}
 
-
 # -------- UPDATE PRODUCT --------
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[float] = None
+    discount_price: Optional[float] = None
     quantity: Optional[int] = None
+    featured: Optional[bool] = None 
     image_pos_x: Optional[int] = None
     image_pos_y: Optional[int] = None
     image_scale: Optional[float] = None
+
 
 
 @app.put("/admin/products/{product_id}")
@@ -189,6 +195,7 @@ def update_product(
     db.refresh(product)
 
     return {"detail": "Product updated successfully"}
+
 
 
 # -------- REORDER IMAGES + SET COVER --------
@@ -369,13 +376,6 @@ def toggle_order_delivery(
 # =================================================
 
 # -------- GET CATEGORIES --------
-@app.get("/client/categories")
-def get_categories(db: Session = Depends(get_db)):
-    categories = db.query(Category).all()
-    return [{"id": c.id, "name": c.name} for c in categories]
-
-
-# -------- GET PRODUCTS --------
 @app.get("/client/products")
 def get_products(db: Session = Depends(get_db)):
     products = db.query(Product).all()
@@ -386,8 +386,10 @@ def get_products(db: Session = Depends(get_db)):
             "name": p.name,
             "description": p.description,
             "price": p.price,
+            "discount_price": p.discount_price,
             "quantity": p.quantity,
             "sold_out": p.sold_out,
+            "featured": p.featured,   # ⭐ الجديد
             "category": {
                 "id": p.category.id,
                 "name": p.category.name
@@ -407,6 +409,7 @@ def get_products(db: Session = Depends(get_db)):
         }
         for p in products
     ]
+
 
 
 # ================= CART =================
