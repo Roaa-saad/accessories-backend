@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -396,8 +396,11 @@ def toggle_order_delivery(
 
 # -------- GET CATEGORIES --------
 @app.get("/client/products")
-def get_products(db: Session = Depends(get_db)):
+def get_products(request: Request, db: Session = Depends(get_db)):
     products = db.query(Product).all()
+    
+    # Get base URL dynamically from request
+    base_url = str(request.base_url).rstrip('/')
 
     return [
         {
@@ -419,7 +422,7 @@ def get_products(db: Session = Depends(get_db)):
             "images": [
                 {
                     "id": img.id,
-                    "image_url": f"http://127.0.0.1:8000/uploads/{img.image}",
+                    "image_url": f"{base_url}/uploads/{img.image}",
                     "sort_order": img.sort_order,
                     "is_cover": img.is_cover
                 }
