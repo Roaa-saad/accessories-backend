@@ -310,12 +310,30 @@ def delete_product(product_id: int, db: Session = Depends(get_db)):
 # -------- ADMIN LOGIN --------
 @app.post("/admin/login")
 def admin_login(data: AdminLogin, db: Session = Depends(get_db)):
-    admin = db.query(Admin).filter(Admin.email == data.email).first()
-    if not admin or not verify_password(data.password, admin.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    try:
+        print(f"Login attempt for email: {data.email}")
+        admin = db.query(Admin).filter(Admin.email == data.email).first()
+        print(f"Admin found: {admin is not None}")
+        
+        if not admin:
+            print("Admin not found")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+        password_valid = verify_password(data.password, admin.password)
+        print(f"Password valid: {password_valid}")
+        
+        if not password_valid:
+            print("Invalid password")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({"sub": admin.email})
-    return {"access_token": token, "token_type": "bearer"}
+        token = create_access_token({"sub": admin.email})
+        print("Login successful")
+        return {"access_token": token, "token_type": "bearer"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error during login: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 
