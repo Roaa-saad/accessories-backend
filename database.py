@@ -2,15 +2,25 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+from dotenv import load_dotenv
 
-DB_USER = "postgres"
-DB_PASSWORD = "123"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "accessories_db"
+# Load environment variables from .env file
+load_dotenv()
 
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Get database URL from environment variable
+# Use SUPABASE_URL for production, fallback to local development database
+DATABASE_URL = os.getenv(
+    "SUPABASE_URL",
+    os.getenv("DATABASE_URL", "postgresql://postgres:123@localhost:5432/accessories_db")
+)
 
-engine = create_engine(DATABASE_URL)
+# Create engine with connection pool settings
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,  # Verify connection before using
+    pool_recycle=3600,   # Recycle connections every hour
+    echo=False           # Set to True for SQL query logging
+)
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()

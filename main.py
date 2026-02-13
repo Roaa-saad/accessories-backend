@@ -30,6 +30,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -59,7 +61,11 @@ def clear_uploads_folder(folder_path=UPLOAD_DIR):
 
 
 # ================= DATABASE =================
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Could not create database tables: {e}")
+    print("This may be expected if the database is not available during startup.")
 
 def get_db():
     db = SessionLocal()
