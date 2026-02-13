@@ -32,6 +32,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "http://accessories-backend-production.up.railway.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
