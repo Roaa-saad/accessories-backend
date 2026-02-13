@@ -10,8 +10,7 @@ load_dotenv()
 # Get database URL from environment variable
 # Use SUPABASE_URL for production, fallback to local development database
 DATABASE_URL = os.getenv(
-    "SUPABASE_URL",
-    os.getenv("DATABASE_URL", "postgresql://postgres:123@localhost:5432/accessories_db")
+    os.getenv("DATABASE_URL")
 )
 
 # Create engine with connection pool settings
