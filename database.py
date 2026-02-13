@@ -9,10 +9,13 @@ load_dotenv()
 
 # Get database URL from environment variable
 # Priority: DATABASE_URL (Railway PostgreSQL) > SUPABASE_URL > local development
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    os.getenv("SUPABASE_URL", "postgresql://postgres:123@localhost:5432/accessories_db")
-)
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_URL") or "postgresql://postgres:123@localhost:5432/accessories_db"
+
+# Validate that we have a proper URL
+if not DATABASE_URL or not DATABASE_URL.startswith("postgresql"):
+    raise ValueError(f"Invalid DATABASE_URL: {DATABASE_URL}")
+
+print(f"Connecting to database: {DATABASE_URL[:20]}...")  # Print first 20 chars for debugging
 
 # Create engine with connection pool settings
 engine = create_engine(
