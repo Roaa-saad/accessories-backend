@@ -8,10 +8,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get database URL from environment variable
-# Use SUPABASE_URL for production, fallback to DATABASE_URL or local development database
+# Priority: DATABASE_URL (Railway PostgreSQL) > SUPABASE_URL > local development
 DATABASE_URL = os.getenv(
-    "SUPABASE_URL",
-    os.getenv("DATABASE_URL", "postgresql://postgres:123@localhost:5432/accessories_db")
+    "DATABASE_URL",
+    os.getenv("SUPABASE_URL", "postgresql://postgres:123@localhost:5432/accessories_db")
 )
 
 # Create engine with connection pool settings
