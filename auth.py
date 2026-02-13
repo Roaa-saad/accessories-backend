@@ -13,12 +13,18 @@ def hash_password(password: str):
 
 def verify_password(plain: str, hashed: str):
     try:
+        print(f"Verifying password - Length: {len(plain)}, Bytes: {len(plain.encode('utf-8'))}")
         # Ensure the plain password is within bcrypt's 72 byte limit
-        if len(plain.encode('utf-8')) > 72:
-            plain = plain[:72]
-        return pwd_context.verify(plain, hashed)
+        plain_bytes = plain.encode('utf-8')
+        if len(plain_bytes) > 72:
+            print("Password too long, truncating to 72 bytes")
+            plain = plain_bytes[:72].decode('utf-8', errors='ignore')
+        
+        result = pwd_context.verify(plain, hashed)
+        print(f"Verification result: {result}")
+        return result
     except Exception as e:
-        print(f"Password verification error: {e}")
+        print(f"Password verification error: {type(e).__name__}: {e}")
         return False
 
 def create_access_token(data: dict):
