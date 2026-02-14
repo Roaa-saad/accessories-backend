@@ -18,7 +18,8 @@ from models import (
 
 from schemas import AdminLogin
 from auth import verify_password, create_access_token
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, validator
+import re
 
 
 # ================= APP =================
@@ -498,12 +499,33 @@ def checkout(
 ):
     if not cart:
         raise HTTPException(400, "Cart is empty")
+    
+    # Validate customer name (at least 3 characters, only letters and spaces)
+    if not customer_name or len(customer_name.strip()) < 3:
+        raise HTTPException(400, "Name must be at least 3 characters long")
+    
+    if not re.match(r'^[a-zA-Z\s\u0600-\u06FF]+$', customer_name):
+        raise HTTPException(400, "Name can only contain letters and spaces")
+    
+    # Validate email format
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, customer_email):
+        raise HTTPException(400, "Invalid email format")
+    
+    # Validate phone number (10-15 digits, can include +, spaces, dashes)
+    phone_digits = re.sub(r'[\s\-\+\(\)]', '', customer_phone)
+    if not phone_digits.isdigit() or len(phone_digits) < 10 or len(phone_digits) > 15:
+        raise HTTPException(400, "Phone number must be 10-15 digits")
+    
+    # Validate address (at least 10 characters)
+    if not customer_address or len(customer_address.strip()) < 10:
+        raise HTTPException(400, "Address must be at least 10 characters long")
 
     order = Order(
-        customer_name=customer_name,
-        customer_email=customer_email,
-        customer_phone=customer_phone,
-        customer_address=customer_address
+        customer_name=customer_name.strip(),
+        customer_email=customer_email.lower().strip(),
+        customer_phone=customer_phone.strip(),
+        customer_address=customer_address.strip()
     )
     db.add(order)
     db.commit()
