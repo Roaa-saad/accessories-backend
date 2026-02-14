@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import shutil, os, time
+import shutil, os, time, re
 
 from database import Base, engine, SessionLocal
 from storage import upload_to_supabase, delete_from_supabase
@@ -151,7 +151,9 @@ async def add_product(
         db.refresh(product)
 
         for index, image in enumerate(images):
-            filename = f"{int(time.time()*1000)}_{image.filename}"
+            # Clean filename - remove invalid characters
+            clean_name = re.sub(r'[^a-zA-Z0-9._-]', '_', image.filename)
+            filename = f"{int(time.time()*1000)}_{clean_name}"
             
             try:
                 # Upload to Supabase Storage
@@ -274,7 +276,9 @@ async def add_image(
     if not product:
         raise HTTPException(404, "Product not found")
 
-    filename = f"{int(time.time()*1000)}_{image.filename}"
+    # Clean filename - remove invalid characters
+    clean_name = re.sub(r'[^a-zA-Z0-9._-]', '_', image.filename)
+    filename = f"{int(time.time()*1000)}_{clean_name}"
     
     # Upload to Supabase Storage
     image_url = await upload_to_supabase(image, filename)
