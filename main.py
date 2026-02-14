@@ -123,11 +123,13 @@ async def add_product(
     featured: Optional[bool] = Form(False),
     db: Session = Depends(get_db)
 ):
-    category = db.query(Category).filter(Category.name == category_name).first()
-    if not category:
-        category = Category(name=category_name)
-        db.add(category)
-        db.commit()
+    try:
+        print(f"Adding product: {name}")
+        category = db.query(Category).filter(Category.name == category_name).first()
+        if not category:
+            category = Category(name=category_name)
+            db.add(category)
+            db.commit()
         db.refresh(category)
 
     product = Product(
@@ -168,8 +170,16 @@ async def add_product(
             is_cover=index == 0
         ))
 
-    db.commit()
-    return {"detail": "Product created successfully"}
+        db.commit()
+        print(f"Product created successfully: {product.id}")
+        return {"detail": "Product created successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error adding product: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error adding product: {str(e)}")
 
 # -------- UPDATE PRODUCT --------
 class ProductUpdate(BaseModel):
