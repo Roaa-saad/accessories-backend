@@ -130,45 +130,45 @@ async def add_product(
             category = Category(name=category_name)
             db.add(category)
             db.commit()
-        db.refresh(category)
+            db.refresh(category)
 
-    product = Product(
-        name=name,
-        description=description,
-        price=price,
-        discount_price=discount_price,
-        quantity=quantity,
-        sold_out=quantity == 0,
-        category_id=category.id,
-        featured=featured, 
-        image_pos_x=50,
-        image_pos_y=50,
-        image_scale=1
-    )
+        product = Product(
+            name=name,
+            description=description,
+            price=price,
+            discount_price=discount_price,
+            quantity=quantity,
+            sold_out=quantity == 0,
+            category_id=category.id,
+            featured=featured, 
+            image_pos_x=50,
+            image_pos_y=50,
+            image_scale=1
+        )
 
-    db.add(product)
-    db.commit()
-    db.refresh(product)
+        db.add(product)
+        db.commit()
+        db.refresh(product)
 
-    for index, image in enumerate(images):
-        filename = f"{int(time.time()*1000)}_{image.filename}"
-        
-        try:
-            # Upload to Supabase Storage
-            image_url = await upload_to_supabase(image, filename)
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to upload image: {str(e)}. Please ensure SUPABASE_ANON_KEY is set in Railway environment variables."
-            )
+        for index, image in enumerate(images):
+            filename = f"{int(time.time()*1000)}_{image.filename}"
+            
+            try:
+                # Upload to Supabase Storage
+                image_url = await upload_to_supabase(image, filename)
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to upload image: {str(e)}. Please ensure SUPABASE_ANON_KEY is set in Railway environment variables."
+                )
 
-        db.add(ProductImage(
-            image=image_url,  # Store full URL instead of filename
-            product_id=product.id,
-            sort_order=index,
-            is_cover=index == 0
-        ))
+            db.add(ProductImage(
+                image=image_url,  # Store full URL instead of filename
+                product_id=product.id,
+                sort_order=index,
+                is_cover=index == 0
+            ))
 
         db.commit()
         print(f"Product created successfully: {product.id}")
