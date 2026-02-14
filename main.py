@@ -323,6 +323,14 @@ async def delete_product(product_id: int, db: Session = Depends(get_db)):
     if not product:
         raise HTTPException(404, "Product not found")
 
+    # Check if product is in any orders
+    order_items = db.query(OrderItem).filter(OrderItem.product_id == product_id).all()
+    if order_items:
+        raise HTTPException(
+            400, 
+            f"Cannot delete product. It is referenced in {len(order_items)} order(s). Please delete those orders first or contact support."
+        )
+
     # Delete images from Supabase Storage
     for img in product.images:
         try:
