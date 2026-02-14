@@ -297,14 +297,19 @@ async def add_image(
 
 # -------- DELETE IMAGE --------
 @app.delete("/admin/images/{image_id}")
-def delete_image(image_id: int, db: Session = Depends(get_db)):
+async def delete_image(image_id: int, db: Session = Depends(get_db)):
     img = db.query(ProductImage).filter(ProductImage.id == image_id).first()
     if not img:
         raise HTTPException(404, "Image not found")
 
-    path = os.path.join(UPLOAD_DIR, img.image)
-    if os.path.exists(path):
-        os.remove(path)
+    # Delete from Supabase Storage
+    try:
+        if 'supabase.co' in img.image:
+            filename = img.image.split('/')[-1]
+            await delete_from_supabase(filename)
+    except Exception as e:
+        print(f"Error deleting image from Supabase: {e}")
+        # Continue even if image deletion fails
 
     db.delete(img)
     db.commit()
@@ -313,15 +318,21 @@ def delete_image(image_id: int, db: Session = Depends(get_db)):
 
 # -------- DELETE PRODUCT --------
 @app.delete("/admin/delete/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db)):
+async def delete_product(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
 
+    # Delete images from Supabase Storage
     for img in product.images:
-        path = os.path.join(UPLOAD_DIR, img.image)
-        if os.path.exists(path):
-            os.remove(path)
+        try:
+            # Extract filename from Supabase URL
+            if 'supabase.co' in img.image:
+                filename = img.image.split('/')[-1]
+                await delete_from_supabase(filename)
+        except Exception as e:
+            print(f"Error deleting image from Supabase: {e}")
+            # Continue even if image deletion fails
 
     db.delete(product)
     db.commit()
