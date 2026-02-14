@@ -151,8 +151,15 @@ async def add_product(
     for index, image in enumerate(images):
         filename = f"{int(time.time()*1000)}_{image.filename}"
         
-        # Upload to Supabase Storage
-        image_url = await upload_to_supabase(image, filename)
+        try:
+            # Upload to Supabase Storage
+            image_url = await upload_to_supabase(image, filename)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to upload image: {str(e)}. Please ensure SUPABASE_ANON_KEY is set in Railway environment variables."
+            )
 
         db.add(ProductImage(
             image=image_url,  # Store full URL instead of filename
