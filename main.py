@@ -6,6 +6,7 @@ from typing import List, Optional
 import shutil, os, time
 
 from database import Base, engine, SessionLocal
+from storage import upload_to_supabase, delete_from_supabase
 from models import (
     Product,
     ProductImage,
@@ -149,13 +150,12 @@ async def add_product(
 
     for index, image in enumerate(images):
         filename = f"{int(time.time()*1000)}_{image.filename}"
-        path = os.path.join(UPLOAD_DIR, filename)
-
-        with open(path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
+        
+        # Upload to Supabase Storage
+        image_url = await upload_to_supabase(image, filename)
 
         db.add(ProductImage(
-            image=filename,
+            image=image_url,  # Store full URL instead of filename
             product_id=product.id,
             sort_order=index,
             is_cover=index == 0
@@ -258,13 +258,12 @@ async def add_image(
         raise HTTPException(404, "Product not found")
 
     filename = f"{int(time.time()*1000)}_{image.filename}"
-    path = os.path.join(UPLOAD_DIR, filename)
-
-    with open(path, "wb") as buffer:
-        shutil.copyfileobj(image.file, buffer)
+    
+    # Upload to Supabase Storage
+    image_url = await upload_to_supabase(image, filename)
 
     db.add(ProductImage(
-        image=filename,
+        image=image_url,  # Store full URL
         product_id=product.id,
         sort_order=len(product.images),
         is_cover=False
@@ -422,7 +421,7 @@ def get_products(request: Request, db: Session = Depends(get_db)):
             "images": [
                 {
                     "id": img.id,
-                    "image_url": f"{base_url}/uploads/{img.image}",
+                    "image_url": img.image,  # Already a full URL from Supabase
                     "sort_order": img.sort_order,
                     "is_cover": img.is_cover
                 }
