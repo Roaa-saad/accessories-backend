@@ -1,33 +1,23 @@
 import os
-import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Email configuration - using Gmail SMTP
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # Your Gmail address
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # App password
 ADMIN_EMAILS = ["roaam5182@gmail.com", "mahasaad3343@gmail.com"]
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 
 
 async def send_order_notification(order_data: dict):
     """
-    Send order notification email to admin
+    Send order notification email to admin using Resend
     """
-    if not SMTP_USERNAME or not SMTP_PASSWORD:
-        print("Warning: SMTP credentials not configured. Email not sent.")
+    if not RESEND_API_KEY:
+        print("Warning: RESEND_API_KEY not configured. Email not sent.")
         return False
     
     try:
-        # Create email message
-        message = MIMEMultipart("alternative")
-        message["From"] = SMTP_USERNAME
-        message["To"] = ", ".join(ADMIN_EMAILS)
-        message["Subject"] = f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}"
+        import resend
+        resend.api_key = RESEND_API_KEY
         
         # Calculate total
         total = sum(item['quantity'] * item['price'] for item in order_data['items'])
@@ -99,18 +89,15 @@ async def send_order_notification(order_data: dict):
         </html>
         """
         
-        # Attach HTML content
-        message.attach(MIMEText(html, "html"))
-        
-        # Send email
-        await aiosmtplib.send(
-            message,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            username=SMTP_USERNAME,
-            password=SMTP_PASSWORD,
-            start_tls=True
-        )
+        # Send email to all admin emails
+        for admin_email in ADMIN_EMAILS:
+            params = {
+                "from": "Accessories Store <onboarding@resend.dev>",
+                "to": [admin_email],
+                "subject": f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}",
+                "html": html,
+            }
+            resend.Emails.send(params)
         
         print(f"✅ Order notification email sent to {', '.join(ADMIN_EMAILS)}")
         return True

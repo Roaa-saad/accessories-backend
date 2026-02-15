@@ -10,3 +10,4 @@ email-validator
 python-dotenv
 supabase
 aiosmtplib
+resend
