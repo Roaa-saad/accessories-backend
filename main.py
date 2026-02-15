@@ -6,7 +6,7 @@ from typing import List, Optional
 import shutil, os, time, re
 
 from database import Base, engine, SessionLocal
-from storage import upload_to_supabase, delete_from_supabase
+from email_service import send_order_notification
 from models import (
     Product,
     ProductImage,
@@ -510,7 +510,7 @@ def add_to_cart(
 
 
 @app.post("/client/checkout")
-def checkout(
+async def checkout(
     customer_name: str = Form(...),
     customer_email: str = Form(...),
     customer_city: str = Form(...),
@@ -557,19 +557,44 @@ def checkout(
     db.commit()
     db.refresh(order)
 
+    order_items = []
     for item in cart:
         product = db.query(Product).filter(Product.id == item["product_id"]).first()
         product.quantity -= item["quantity"]
         product.sold_out = product.quantity == 0
 
-        db.add(OrderItem(
+        order_item = OrderItem(
             order_id=order.id,
             product_id=product.id,
             quantity=item["quantity"],
             price=product.price
-        ))
+        )
+        db.add(order_item)
+        
+        # Store item details for email
+        order_items.append({
+            "product_name": product.name,
+            "quantity": item["quantity"],
+            "price": product.price
+        })
 
     db.commit()
+    
+    # Send email notification to admin
+    try:
+        await send_order_notification({
+            "order_id": order.id,
+            "customer_name": customer_name,
+            "customer_email": customer_email,
+            "customer_phone": customer_phone,
+            "customer_city": customer_city,
+            "customer_address": customer_address,
+            "items": order_items
+        })
+    except Exception as e:
+        print(f"Failed to send email notification: {e}")
+        # Don't fail the order if email fails
+    
     cart.clear()
     return {"detail": "Order placed successfully"}
 
