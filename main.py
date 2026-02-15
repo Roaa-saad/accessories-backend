@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import shutil, os, time, re
+import shutil, os, time, re, asyncio
 
 from database import Base, engine, SessionLocal
 from email_service import send_order_notification
@@ -603,20 +603,16 @@ async def checkout(
 
     db.commit()
     
-    # Send email notification to admin
-    try:
-        await send_order_notification({
-            "order_id": order.id,
-            "customer_name": customer_name,
-            "customer_email": customer_email,
-            "customer_phone": customer_phone,
-            "customer_city": customer_city,
-            "customer_address": customer_address,
-            "items": order_items
-        })
-    except Exception as e:
-        print(f"Failed to send email notification: {e}")
-        # Don't fail the order if email fails
+    # Send email notification to admin in background (non-blocking)
+    asyncio.create_task(send_order_notification({
+        "order_id": order.id,
+        "customer_name": customer_name,
+        "customer_email": customer_email,
+        "customer_phone": customer_phone,
+        "customer_city": customer_city,
+        "customer_address": customer_address,
+        "items": order_items
+    }))
     
     cart.clear()
     return {"detail": "Order placed successfully"}
