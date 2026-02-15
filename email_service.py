@@ -1,26 +1,23 @@
 import os
-import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Email configuration - like nodemailer transporter
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")  # Your email
-SMTP_PASS = os.getenv("SMTP_PASS")  # Your password or app password
+# Mailgun configuration - uses HTTP API (works on Railway)
+MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
+MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
+MAILGUN_FROM_EMAIL = os.getenv("MAILGUN_FROM_EMAIL", "Accessories Store <noreply@mg.yourdomain.com>")
 ADMIN_EMAILS = ["roaam5182@gmail.com", "mahasaad3343@gmail.com"]
 
 
 async def send_order_notification(order_data: dict):
     """
-    Send order notification email - works like nodemailer
-    Supports: Gmail, Outlook, Yahoo, or any SMTP server
+    Send order notification email via Mailgun HTTP API
+    Works on Railway (no SMTP port blocking)
     """
-    if not SMTP_USER or not SMTP_PASS:
-        print("Warning: SMTP credentials not configured. Email not sent.")
+    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
+        print("⚠️ Warning: Mailgun credentials not configured. Email not sent.")
         return False
     
     try:
@@ -94,30 +91,27 @@ async def send_order_notification(order_data: dict):
         </html>
         """
         
-        # Create message - like nodemailer mailOptions
-        message = MIMEMultipart("alternative")
-        message["From"] = SMTP_USER
-        message["To"] = ", ".join(ADMIN_EMAILS)
-        message["Subject"] = f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}"
-        message.attach(MIMEText(html, "html"))
+        print(f"🔄 Sending email via Mailgun API to {', '.join(ADMIN_EMAILS)}")
         
-        # Send email - like transporter.sendMail()
-        print(f"🔄 Attempting to send email via {SMTP_HOST}:{SMTP_PORT}")
-        print(f"📧 From: {SMTP_USER}")
-        print(f"📬 To: {', '.join(ADMIN_EMAILS)}")
+        # Send via Mailgun HTTP API
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
+                auth=("api", MAILGUN_API_KEY),
+                data={
+                    "from": MAILGUN_FROM_EMAIL,
+                    "to": ADMIN_EMAILS,
+                    "subject": f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}",
+                    "html": html,
+                }
+            )
         
-        await aiosmtplib.send(
-            message,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            username=SMTP_USER,
-            password=SMTP_PASS,
-            start_tls=True,
-            timeout=30
-        )
-        
-        print(f"✅ Order notification email sent successfully to {', '.join(ADMIN_EMAILS)}")
-        return True
+        if response.status_code == 200:
+            print(f"✅ Order notification email sent successfully to {', '.join(ADMIN_EMAILS)}")
+            return True
+        else:
+            print(f"❌ Mailgun API error: {response.status_code} - {response.text}")
+            return False
         
     except Exception as e:
         print(f"❌ Error sending email: {type(e).__name__}: {str(e)}")
