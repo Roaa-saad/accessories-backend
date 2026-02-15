@@ -11,7 +11,7 @@ SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # Your Gmail address
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # App password
-ADMIN_EMAIL = "roaam5182@gmail.com"
+ADMIN_EMAILS = ["roaam5182@gmail.com", "mahasaad3343@gmail.com"]
 
 
 async def send_order_notification(order_data: dict):
@@ -26,7 +26,7 @@ async def send_order_notification(order_data: dict):
         # Create email message
         message = MIMEMultipart("alternative")
         message["From"] = SMTP_USERNAME
-        message["To"] = ADMIN_EMAIL
+        message["To"] = ", ".join(ADMIN_EMAILS)
         message["Subject"] = f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}"
         
         # Calculate total
@@ -112,7 +112,7 @@ async def send_order_notification(order_data: dict):
             start_tls=True
         )
         
-        print(f"✅ Order notification email sent to {ADMIN_EMAIL}")
+        print(f"✅ Order notification email sent to {', '.join(ADMIN_EMAILS)}")
         return True
         
     except Exception as e:
