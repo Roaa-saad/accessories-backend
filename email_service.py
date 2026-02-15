@@ -1,24 +1,29 @@
 import os
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Email configuration - like nodemailer transporter
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")  # Your email
+SMTP_PASS = os.getenv("SMTP_PASS")  # Your password or app password
 ADMIN_EMAILS = ["roaam5182@gmail.com", "mahasaad3343@gmail.com"]
-RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 
 
 async def send_order_notification(order_data: dict):
     """
-    Send order notification email to admin using Resend
+    Send order notification email - works like nodemailer
+    Supports: Gmail, Outlook, Yahoo, or any SMTP server
     """
-    if not RESEND_API_KEY:
-        print("Warning: RESEND_API_KEY not configured. Email not sent.")
+    if not SMTP_USER or not SMTP_PASS:
+        print("Warning: SMTP credentials not configured. Email not sent.")
         return False
     
     try:
-        import resend
-        resend.api_key = RESEND_API_KEY
-        
         # Calculate total
         total = sum(item['quantity'] * item['price'] for item in order_data['items'])
         
@@ -89,15 +94,22 @@ async def send_order_notification(order_data: dict):
         </html>
         """
         
-        # Send email to all admin emails
-        for admin_email in ADMIN_EMAILS:
-            params = {
-                "from": "Accessories Store <onboarding@resend.dev>",
-                "to": [admin_email],
-                "subject": f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}",
-                "html": html,
-            }
-            resend.Emails.send(params)
+        # Create message - like nodemailer mailOptions
+        message = MIMEMultipart("alternative")
+        message["From"] = SMTP_USER
+        message["To"] = ", ".join(ADMIN_EMAILS)
+        message["Subject"] = f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}"
+        message.attach(MIMEText(html, "html"))
+        
+        # Send email - like transporter.sendMail()
+        await aiosmtplib.send(
+            message,
+            hostname=SMTP_HOST,
+            port=SMTP_PORT,
+            username=SMTP_USER,
+            password=SMTP_PASS,
+            start_tls=True
+        )
         
         print(f"✅ Order notification email sent to {', '.join(ADMIN_EMAILS)}")
         return True
