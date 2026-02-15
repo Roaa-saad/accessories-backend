@@ -1,120 +1,80 @@
 import os
-import httpx
+from twilio.rest import Client
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Mailgun configuration - uses HTTP API (works on Railway)
-MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
-MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
-MAILGUN_FROM_EMAIL = os.getenv("MAILGUN_FROM_EMAIL", "Accessories Store <noreply@mg.yourdomain.com>")
-ADMIN_EMAILS = ["roaam5182@gmail.com", "mahasaad3343@gmail.com"]
+# Twilio WhatsApp configuration
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")  # Twilio sandbox number
+ADMIN_WHATSAPP_NUMBERS = [
+    os.getenv("ADMIN_WHATSAPP_1", "whatsapp:+201234567890"),  # Replace with your number
+    os.getenv("ADMIN_WHATSAPP_2", "whatsapp:+201234567890")   # Replace with second admin number
+]
 
 
 async def send_order_notification(order_data: dict):
     """
-    Send order notification email via Mailgun HTTP API
-    Works on Railway (no SMTP port blocking)
+    Send order notification via WhatsApp using Twilio
+    Much easier than email - no verification needed!
     """
-    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
-        print("⚠️ Warning: Mailgun credentials not configured. Email not sent.")
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        print("⚠️ Warning: Twilio credentials not configured. WhatsApp message not sent.")
         return False
     
     try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        
         # Calculate total
         total = sum(item['quantity'] * item['price'] for item in order_data['items'])
         
-        # Create HTML email body
-        html = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-                <h2 style="color: #4CAF50; text-align: center;">🛒 New Order Received!</h2>
-                
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h3 style="margin-top: 0;">Order Details</h3>
-                    <p><strong>Order ID:</strong> #{order_data['order_id']}</p>
-                </div>
-                
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h3 style="margin-top: 0;">Customer Information</h3>
-                    <p><strong>Name:</strong> {order_data['customer_name']}</p>
-                    <p><strong>Email:</strong> {order_data['customer_email']}</p>
-                    <p><strong>Phone:</strong> {order_data['customer_phone']}</p>
-                    <p><strong>City:</strong> {order_data.get('customer_city', 'N/A')}</p>
-                    <p><strong>Address:</strong> {order_data['customer_address']}</p>
-                </div>
-                
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h3 style="margin-top: 0;">Order Items</h3>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background-color: #4CAF50; color: white;">
-                                <th style="padding: 10px; text-align: left;">Product</th>
-                                <th style="padding: 10px; text-align: center;">Quantity</th>
-                                <th style="padding: 10px; text-align: right;">Price</th>
-                                <th style="padding: 10px; text-align: right;">Subtotal</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-        """
+        # Create WhatsApp message
+        message_text = f"""🛒 *NEW ORDER RECEIVED!*
+
+📋 *Order ID:* #{order_data['order_id']}
+
+👤 *Customer Info:*
+• Name: {order_data['customer_name']}
+• Email: {order_data['customer_email']}
+• Phone: {order_data['customer_phone']}
+• City: {order_data.get('customer_city', 'N/A')}
+• Address: {order_data['customer_address']}
+
+📦 *Order Items:*
+"""
         
         for item in order_data['items']:
             subtotal = item['quantity'] * item['price']
-            html += f"""
-                            <tr style="border-bottom: 1px solid #ddd;">
-                                <td style="padding: 10px;">{item['product_name']}</td>
-                                <td style="padding: 10px; text-align: center;">{item['quantity']}</td>
-                                <td style="padding: 10px; text-align: right;">{item['price']} EGP</td>
-                                <td style="padding: 10px; text-align: right;">{subtotal} EGP</td>
-                            </tr>
-            """
+            message_text += f"• {item['product_name']}\n  Qty: {item['quantity']} × {item['price']} EGP = {subtotal} EGP\n"
         
-        html += f"""
-                        </tbody>
-                        <tfoot>
-                            <tr style="font-weight: bold; background-color: #f0f0f0;">
-                                <td colspan="3" style="padding: 10px; text-align: right;">Total:</td>
-                                <td style="padding: 10px; text-align: right;">{total} EGP</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-                
-                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
-                    <p style="color: #666; font-size: 12px;">
-                        This is an automated notification from your Accessories Store.
-                    </p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        message_text += f"\n💰 *Total: {total} EGP*"
         
-        print(f"🔄 Sending email via Mailgun API to {', '.join(ADMIN_EMAILS)}")
+        print(f"🔄 Sending WhatsApp notifications to {len(ADMIN_WHATSAPP_NUMBERS)} admin(s)")
         
-        # Send via Mailgun HTTP API
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
-                auth=("api", MAILGUN_API_KEY),
-                data={
-                    "from": MAILGUN_FROM_EMAIL,
-                    "to": ADMIN_EMAILS,
-                    "subject": f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}",
-                    "html": html,
-                }
-            )
+        # Send to all admin WhatsApp numbers
+        success_count = 0
+        for admin_number in ADMIN_WHATSAPP_NUMBERS:
+            try:
+                message = client.messages.create(
+                    from_=TWILIO_WHATSAPP_FROM,
+                    body=message_text,
+                    to=admin_number
+                )
+                print(f"✅ WhatsApp sent to {admin_number}: {message.sid}")
+                success_count += 1
+            except Exception as e:
+                print(f"❌ Failed to send to {admin_number}: {e}")
         
-        if response.status_code == 200:
-            print(f"✅ Order notification email sent successfully to {', '.join(ADMIN_EMAILS)}")
+        if success_count > 0:
+            print(f"✅ WhatsApp notifications sent to {success_count}/{len(ADMIN_WHATSAPP_NUMBERS)} admin(s)")
             return True
         else:
-            print(f"❌ Mailgun API error: {response.status_code} - {response.text}")
+            print("❌ Failed to send WhatsApp to any admin")
             return False
         
     except Exception as e:
-        print(f"❌ Error sending email: {type(e).__name__}: {str(e)}")
+        print(f"❌ Error sending WhatsApp: {type(e).__name__}: {str(e)}")
         import traceback
         print(f"Full traceback: {traceback.format_exc()}")
         return False
