@@ -60,6 +60,29 @@ def clear_uploads_folder(folder_path=UPLOAD_DIR):
 # ================= DATABASE =================
 try:
     Base.metadata.create_all(bind=engine)
+    
+    # Add customer_city column if it doesn't exist
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            # Check if column exists
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='orders' AND column_name='customer_city';
+            """))
+            
+            if result.fetchone() is None:
+                print("Adding customer_city column to orders table...")
+                conn.execute(text("""
+                    ALTER TABLE orders 
+                    ADD COLUMN customer_city VARCHAR;
+                """))
+                conn.commit()
+                print("✅ customer_city column added successfully!")
+    except Exception as e:
+        print(f"Note: Could not add customer_city column: {e}")
+        
 except Exception as e:
     print(f"Warning: Could not create database tables: {e}")
     print("This may be expected if the database is not available during startup.")
