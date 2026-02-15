@@ -102,18 +102,25 @@ async def send_order_notification(order_data: dict):
         message.attach(MIMEText(html, "html"))
         
         # Send email - like transporter.sendMail()
+        print(f"🔄 Attempting to send email via {SMTP_HOST}:{SMTP_PORT}")
+        print(f"📧 From: {SMTP_USER}")
+        print(f"📬 To: {', '.join(ADMIN_EMAILS)}")
+        
         await aiosmtplib.send(
             message,
             hostname=SMTP_HOST,
             port=SMTP_PORT,
             username=SMTP_USER,
             password=SMTP_PASS,
-            start_tls=True
+            start_tls=True,
+            timeout=30
         )
         
-        print(f"✅ Order notification email sent to {', '.join(ADMIN_EMAILS)}")
+        print(f"✅ Order notification email sent successfully to {', '.join(ADMIN_EMAILS)}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending email: {e}")
+        print(f"❌ Error sending email: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
         return False
