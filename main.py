@@ -389,6 +389,7 @@ def get_all_orders(db: Session = Depends(get_db)):
             "order_id": order.id,
             "customer_name": order.customer_name,
             "customer_email": order.customer_email,
+            "customer_city": order.customer_city,
             "customer_phone": order.customer_phone,
             "customer_address": order.customer_address,
             "is_delivered": order.is_delivered,
@@ -512,6 +513,7 @@ def add_to_cart(
 def checkout(
     customer_name: str = Form(...),
     customer_email: str = Form(...),
+    customer_city: str = Form(...),
     customer_phone: str = Form(...),
     customer_address: str = Form(...),
     db: Session = Depends(get_db)
@@ -525,6 +527,10 @@ def checkout(
     
     if not re.match(r'^[a-zA-Z\s\u0600-\u06FF]+$', customer_name):
         raise HTTPException(400, "Name can only contain letters and spaces")
+    
+    # Validate city (at least 2 characters)
+    if not customer_city or len(customer_city.strip()) < 2:
+        raise HTTPException(400, "City must be at least 2 characters long")
     
     # Validate email format
     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -543,6 +549,7 @@ def checkout(
     order = Order(
         customer_name=customer_name.strip(),
         customer_email=customer_email.lower().strip(),
+        customer_city=customer_city.strip(),
         customer_phone=customer_phone.strip(),
         customer_address=customer_address.strip()
     )

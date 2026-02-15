@@ -102,6 +102,7 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     customer_name = Column(String, nullable=False)
     customer_email = Column(String, nullable=False)
+    customer_city = Column(String, nullable=True)  # New city field
     customer_address = Column(String, nullable=False)
     customer_phone = Column(String, nullable=False)
 
