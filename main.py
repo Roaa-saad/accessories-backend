@@ -536,7 +536,35 @@ def get_products(request: Request, db: Session = Depends(get_db)):
 
 
 # ================= CART (localStorage-based, frontend manages cart) =================
-# Backend only validates products for checkout
+# Backend validates products when adding to cart
+
+@app.post("/client/cart/add")
+def add_to_cart(
+    product_id: int = Form(...),
+    quantity: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Validate product and return product details for localStorage"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+
+    if not product:
+        raise HTTPException(404, "Product not found")
+    if product.sold_out:
+        raise HTTPException(400, "Product is sold out")
+    if quantity > product.quantity:
+        raise HTTPException(400, "Not enough stock")
+
+    return {
+        "detail": "Product validated",
+        "product": {
+            "product_id": product.id,
+            "name": product.name,
+            "price": product.price,
+            "discount_price": product.discount_price,
+            "quantity": quantity,
+            "images": [img.image for img in product.images]
+        }
+    }
 
 
 class CartItem(BaseModel):
