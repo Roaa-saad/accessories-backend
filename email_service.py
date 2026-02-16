@@ -68,6 +68,8 @@ async def send_order_notification(order_data: dict):
                     <p><strong>Phone:</strong> {order_data['customer_phone']}</p>
                     <p><strong>City:</strong> {order_data.get('customer_city', 'N/A')}</p>
                     <p><strong>Address:</strong> {order_data['customer_address']}</p>
+                    {f"<p><strong>Discount Code:</strong> {order_data['discount_code']}</p>" if order_data.get('discount_code') else ''}
+                    {f"<p><strong>Notes:</strong> {order_data['notes']}</p>" if order_data.get('notes') else ''}
                 </div>
                 
                 <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">

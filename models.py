@@ -105,6 +105,8 @@ class Order(Base):
     customer_city = Column(String, nullable=True)  # New city field
     customer_address = Column(String, nullable=False)
     customer_phone = Column(String, nullable=False)
+    discount_code = Column(String, nullable=True)  # Discount code field
+    notes = Column(String, nullable=True)  # Order notes field
 
     is_delivered = Column(Boolean, default=False)
 
