@@ -544,9 +544,9 @@ def get_session_id(request: Request, response: Response) -> str:
             key="session_id",
             value=session_id,
             max_age=86400 * 7,  # 7 days
-            httponly=True,
-            samesite="none",
-            secure=True
+            httponly=False,  # Allow JavaScript to read (for debugging)
+            samesite="lax",  # More permissive for cross-origin
+            secure=False  # Don't require HTTPS
         )
     return session_id
 
