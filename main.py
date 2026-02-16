@@ -600,6 +600,10 @@ def remove_from_cart(request: Request, product_id: int):
     return {"detail": "Item removed from cart", "cart": [], "session_id": session_id}
 
 
+class CartItem(BaseModel):
+    product_id: int
+    quantity: int
+
 class CheckoutRequest(BaseModel):
     customer_name: str
     customer_email: str
