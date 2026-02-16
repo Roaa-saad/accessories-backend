@@ -30,11 +30,7 @@ app = FastAPI()
 # ================= CORS =================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://accessories-store-nu.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173"
-    ],
+    allow_origins=["*"],  # Allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -536,22 +532,14 @@ def get_products(request: Request, db: Session = Depends(get_db)):
 
 
 # ================= CART =================
-# Session-based cart - each user gets their own cart
+# Session-based cart using X-Session-ID header (works better with CORS)
 user_carts = {}  # Dictionary: {session_id: [cart_items]}
 
-def get_session_id(request: Request, response: Response) -> str:
-    """Get or create session ID for user"""
-    session_id = request.cookies.get("session_id")
+def get_session_id(request: Request) -> str:
+    """Get session ID from header or generate new one"""
+    session_id = request.headers.get("X-Session-ID")
     if not session_id:
         session_id = str(uuid.uuid4())
-        response.set_cookie(
-            key="session_id",
-            value=session_id,
-            max_age=86400 * 7,  # 7 days
-            httponly=False,  # Allow JavaScript to read (for debugging)
-            samesite="lax",  # More permissive for cross-origin
-            secure=False  # Don't require HTTPS
-        )
     return session_id
 
 def get_user_cart(session_id: str) -> list:
@@ -563,13 +551,12 @@ def get_user_cart(session_id: str) -> list:
 @app.post("/client/cart/add")
 def add_to_cart(
     request: Request,
-    response: Response,
     product_id: int = Form(...),
     quantity: int = Form(...),
     db: Session = Depends(get_db)
 ):
     """Add item to user's session-based cart"""
-    session_id = get_session_id(request, response)
+    session_id = get_session_id(request)
     cart = get_user_cart(session_id)
     
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -603,25 +590,23 @@ def get_cart(request: Request, response: Response):
     cart = get_user_cart(session_id)
     return cart
 
+    return {"detail": "Added to cart", "cart": cart, "session_id": session_id}
+
+@app.get("/client/cart")
+def get_cart(request: Request):
+    """Get user's session-based cart"""
+    session_id = get_session_id(request)
+    cart = get_user_cart(session_id)
+    return {"cart": cart, "session_id": session_id}
+
 @app.delete("/client/cart/remove/{product_id}")
 def remove_from_cart(request: Request, product_id: int):
     """Remove item from user's session-based cart"""
-    session_id = request.cookies.get("session_id")
-    if not session_id or session_id not in user_carts:
-        return {"detail": "Item removed from cart", "cart": []}
-    
-    cart = user_carts[session_id]
-    user_carts[session_id] = [item for item in cart if item["product_id"] != product_id]
-    return {"detail": "Item removed from cart", "cart": user_carts[session_id]}
-
-# NEW ENDPOINTS (Recommended)
-class CartItem(BaseModel):
-    product_id: int
-    quantity: int
-
-@app.post("/client/cart/validate")
-def validate_cart_item(
-    product_id: int = Form(...),
+    session_id = get_session_id(request)
+    if session_id in user_carts:
+        user_carts[session_id] = [item for item in user_carts[session_id] if item["product_id"] != product_id]
+        return {"detail": "Item removed from cart", "cart": user_carts[session_id], "session_id": session_id}
+    return {"detail": "Item removed from cart", "cart": [], "session_id": session_id}
     quantity: int = Form(...),
     db: Session = Depends(get_db)
 ):
@@ -697,12 +682,12 @@ async def checkout(
         if not cart:
             raise HTTPException(400, "Cart is empty")
         
-        cart_items = [CartItem(product_id=item["product_id"], quantity=item["quantity"]) for item in cart]
-    
-    # Validate customer name (at least 3 characters, only letters and spaces)
-    if not customer_name or len(customer_name.strip()) < 3:
-        raise HTTPException(400, "Name must be at least 3 characters long")
-    
+        cart_items = request.cart_items
+    else:
+        # OLD: Form request with session-based cart
+        session_id = http_request.headers.get("X-Session-ID")
+        if not session_id or session_id not in user_carts:
+            raise HTTPException(400, "Cart is empty")
     if not re.match(r'^[a-zA-Z\s\u0600-\u06FF]+$', customer_name):
         raise HTTPException(400, "Name can only contain letters and spaces")
     
@@ -788,14 +773,14 @@ async def checkout(
 
 
 @app.post("/client/calculate-shipping")
-def calculate_shipping(city: str = Form(...)):
-    """
-    Calculate shipping charges based on city
-    """
-    city_lower = city.lower().strip()
+    }))
     
-    # Cairo & Giza: 65 EGP
-    cairo_giza = ['cairo', 'giza', 'القاهرة', 'الجيزة']
+    # Clear user's session cart after successful order
+    session_id = http_request.headers.get("X-Session-ID")
+    if session_id and session_id in user_carts:
+        user_carts[session_id].clear()
+    
+    return {"detail": "Order placed successfully", "order_id": order.id}
     
     # New Cities & Suburbs: 70 EGP
     new_cities = ['new cairo', 'القاهرة الجديدة', '6th october', '6 أكتوبر', 
