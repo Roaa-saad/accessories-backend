@@ -532,9 +532,56 @@ def get_products(request: Request, db: Session = Depends(get_db)):
 
 
 # ================= CART =================
-# Cart is now managed on frontend with localStorage
-# Backend only validates products and stock availability
+# DEPRECATED: These endpoints are kept for backward compatibility
+# Frontend should migrate to localStorage + new checkout endpoint
+# TODO: Remove after frontend migration
 
+cart = []  # Temporary global cart (will be removed)
+
+@app.post("/client/cart/add")
+def add_to_cart(
+    product_id: int = Form(...),
+    quantity: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    """DEPRECATED: Use localStorage on frontend instead"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+
+    if not product:
+        raise HTTPException(404, "Product not found")
+    if product.sold_out:
+        raise HTTPException(400, "Product is sold out")
+    if quantity > product.quantity:
+        raise HTTPException(400, "Not enough stock")
+
+    existing = next((i for i in cart if i["product_id"] == product_id), None)
+
+    if existing:
+        existing["quantity"] += quantity
+    else:
+        cart.append({
+            "product_id": product.id,
+            "name": product.name,
+            "price": product.price,
+            "quantity": quantity,
+            "images": [img.image for img in product.images]
+        })
+
+    return {"detail": "Added to cart", "cart": cart}
+
+@app.get("/client/cart")
+def get_cart():
+    """DEPRECATED: Use localStorage on frontend instead"""
+    return cart
+
+@app.delete("/client/cart/remove/{product_id}")
+def remove_from_cart(product_id: int):
+    """DEPRECATED: Use localStorage on frontend instead"""
+    global cart
+    cart = [item for item in cart if item["product_id"] != product_id]
+    return {"detail": "Item removed from cart", "cart": cart}
+
+# NEW ENDPOINTS (Recommended)
 class CartItem(BaseModel):
     product_id: int
     quantity: int
@@ -575,23 +622,42 @@ class CheckoutRequest(BaseModel):
     customer_address: str
     discount_code: Optional[str] = None
     notes: Optional[str] = None
-    cart_items: List[CartItem]
+    cart_items: Optional[List[CartItem]] = None
 
 @app.post("/client/checkout")
 async def checkout(
-    request: CheckoutRequest,
+    request: Optional[CheckoutRequest] = None,
+    customer_name: Optional[str] = Form(None),
+    customer_email: Optional[str] = Form(None),
+    customer_city: Optional[str] = Form(None),
+    customer_phone: Optional[str] = Form(None),
+    customer_address: Optional[str] = Form(None),
+    discount_code: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    if not request.cart_items:
-        raise HTTPException(400, "Cart is empty")
+    """
+    Checkout endpoint supporting both:
+    1. NEW: JSON with cart_items in body
+    2. OLD: Form data with global cart (backward compatible)
+    """
     
-    customer_name = request.customer_name
-    customer_email = request.customer_email
-    customer_city = request.customer_city
-    customer_phone = request.customer_phone
-    customer_address = request.customer_address
-    discount_code = request.discount_code
-    notes = request.notes
+    # Determine if this is new JSON request or old Form request
+    if request and request.cart_items:
+        # NEW: JSON request with cart in body
+        customer_name = request.customer_name
+        customer_email = request.customer_email
+        customer_city = request.customer_city
+        customer_phone = request.customer_phone
+        customer_address = request.customer_address
+        discount_code = request.discount_code
+        notes = request.notes
+        cart_items = request.cart_items
+    else:
+        # OLD: Form request with global cart
+        if not cart:
+            raise HTTPException(400, "Cart is empty")
+        cart_items = [CartItem(product_id=item["product_id"], quantity=item["quantity"]) for item in cart]
     
     # Validate customer name (at least 3 characters, only letters and spaces)
     if not customer_name or len(customer_name.strip()) < 3:
@@ -632,7 +698,7 @@ async def checkout(
     db.refresh(order)
 
     order_items = []
-    for item in request.cart_items:
+    for item in cart_items:
         product = db.query(Product).filter(Product.id == item.product_id).first()
         
         if not product:
@@ -672,6 +738,10 @@ async def checkout(
         "notes": notes,
         "items": order_items
     }))
+    
+    # Clear global cart if using old method
+    if cart:
+        cart.clear()
     
     return {"detail": "Order placed successfully", "order_id": order.id}
 
