@@ -1,9 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Request, Response, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import shutil, os, time, re, asyncio
+import shutil, os, time, re, asyncio, uuid
 
 from database import Base, engine, SessionLocal
 from email_service import send_order_notification
@@ -532,19 +532,42 @@ def get_products(request: Request, db: Session = Depends(get_db)):
 
 
 # ================= CART =================
-# DEPRECATED: These endpoints are kept for backward compatibility
-# Frontend should migrate to localStorage + new checkout endpoint
-# TODO: Remove after frontend migration
+# Session-based cart - each user gets their own cart
+user_carts = {}  # Dictionary: {session_id: [cart_items]}
 
-cart = []  # Temporary global cart (will be removed)
+def get_session_id(request: Request, response: Response) -> str:
+    """Get or create session ID for user"""
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        response.set_cookie(
+            key="session_id",
+            value=session_id,
+            max_age=86400 * 7,  # 7 days
+            httponly=True,
+            samesite="none",
+            secure=True
+        )
+    return session_id
+
+def get_user_cart(session_id: str) -> list:
+    """Get cart for specific user session"""
+    if session_id not in user_carts:
+        user_carts[session_id] = []
+    return user_carts[session_id]
 
 @app.post("/client/cart/add")
 def add_to_cart(
+    request: Request,
+    response: Response,
     product_id: int = Form(...),
     quantity: int = Form(...),
     db: Session = Depends(get_db)
 ):
-    """DEPRECATED: Use localStorage on frontend instead"""
+    """Add item to user's session-based cart"""
+    session_id = get_session_id(request, response)
+    cart = get_user_cart(session_id)
+    
     product = db.query(Product).filter(Product.id == product_id).first()
 
     if not product:
@@ -570,16 +593,22 @@ def add_to_cart(
     return {"detail": "Added to cart", "cart": cart}
 
 @app.get("/client/cart")
-def get_cart():
-    """DEPRECATED: Use localStorage on frontend instead"""
+def get_cart(request: Request, response: Response):
+    """Get user's session-based cart"""
+    session_id = get_session_id(request, response)
+    cart = get_user_cart(session_id)
     return cart
 
 @app.delete("/client/cart/remove/{product_id}")
-def remove_from_cart(product_id: int):
-    """DEPRECATED: Use localStorage on frontend instead"""
-    global cart
-    cart = [item for item in cart if item["product_id"] != product_id]
-    return {"detail": "Item removed from cart", "cart": cart}
+def remove_from_cart(request: Request, product_id: int):
+    """Remove item from user's session-based cart"""
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in user_carts:
+        return {"detail": "Item removed from cart", "cart": []}
+    
+    cart = user_carts[session_id]
+    user_carts[session_id] = [item for item in cart if item["product_id"] != product_id]
+    return {"detail": "Item removed from cart", "cart": user_carts[session_id]}
 
 # NEW ENDPOINTS (Recommended)
 class CartItem(BaseModel):
@@ -626,6 +655,7 @@ class CheckoutRequest(BaseModel):
 
 @app.post("/client/checkout")
 async def checkout(
+    http_request: Request,
     request: Optional[CheckoutRequest] = None,
     customer_name: Optional[str] = Form(None),
     customer_email: Optional[str] = Form(None),
@@ -639,7 +669,7 @@ async def checkout(
     """
     Checkout endpoint supporting both:
     1. NEW: JSON with cart_items in body
-    2. OLD: Form data with global cart (backward compatible)
+    2. OLD: Form data with session-based cart
     """
     
     # Determine if this is new JSON request or old Form request
@@ -654,9 +684,15 @@ async def checkout(
         notes = request.notes
         cart_items = request.cart_items
     else:
-        # OLD: Form request with global cart
+        # OLD: Form request with session-based cart
+        session_id = http_request.cookies.get("session_id")
+        if not session_id or session_id not in user_carts:
+            raise HTTPException(400, "Cart is empty")
+        
+        cart = user_carts[session_id]
         if not cart:
             raise HTTPException(400, "Cart is empty")
+        
         cart_items = [CartItem(product_id=item["product_id"], quantity=item["quantity"]) for item in cart]
     
     # Validate customer name (at least 3 characters, only letters and spaces)
@@ -739,9 +775,10 @@ async def checkout(
         "items": order_items
     }))
     
-    # Clear global cart if using old method
-    if cart:
-        cart.clear()
+    # Clear user's session cart after successful order
+    session_id = http_request.cookies.get("session_id")
+    if session_id and session_id in user_carts:
+        user_carts[session_id].clear()
     
     return {"detail": "Order placed successfully", "order_id": order.id}
 
