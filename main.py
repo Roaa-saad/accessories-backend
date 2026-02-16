@@ -532,14 +532,20 @@ def get_products(request: Request, db: Session = Depends(get_db)):
 
 
 # ================= CART =================
-cart = []
+# Cart is now managed on frontend with localStorage
+# Backend only validates products and stock availability
 
-@app.post("/client/cart/add")
-def add_to_cart(
+class CartItem(BaseModel):
+    product_id: int
+    quantity: int
+
+@app.post("/client/cart/validate")
+def validate_cart_item(
     product_id: int = Form(...),
     quantity: int = Form(...),
     db: Session = Depends(get_db)
 ):
+    """Validate that product exists and has enough stock"""
     product = db.query(Product).filter(Product.id == product_id).first()
 
     if not product:
@@ -547,37 +553,45 @@ def add_to_cart(
     if product.sold_out:
         raise HTTPException(400, "Product is sold out")
     if quantity > product.quantity:
-        raise HTTPException(400, "Not enough stock")
+        raise HTTPException(400, f"Not enough stock. Only {product.quantity} available")
 
-    existing = next((i for i in cart if i["product_id"] == product_id), None)
-
-    if existing:
-        existing["quantity"] += quantity
-    else:
-        cart.append({
-            "product_id": product.id,
+    return {
+        "valid": True,
+        "product": {
+            "id": product.id,
             "name": product.name,
             "price": product.price,
-            "quantity": quantity,
+            "available_quantity": product.quantity,
             "images": [img.image for img in product.images]
-        })
+        }
+    }
 
-    return {"detail": "Added to cart", "cart": cart}
 
+class CheckoutRequest(BaseModel):
+    customer_name: str
+    customer_email: str
+    customer_city: str
+    customer_phone: str
+    customer_address: str
+    discount_code: Optional[str] = None
+    notes: Optional[str] = None
+    cart_items: List[CartItem]
 
 @app.post("/client/checkout")
 async def checkout(
-    customer_name: str = Form(...),
-    customer_email: str = Form(...),
-    customer_city: str = Form(...),
-    customer_phone: str = Form(...),
-    customer_address: str = Form(...),
-    discount_code: Optional[str] = Form(None),
-    notes: Optional[str] = Form(None),
+    request: CheckoutRequest,
     db: Session = Depends(get_db)
 ):
-    if not cart:
+    if not request.cart_items:
         raise HTTPException(400, "Cart is empty")
+    
+    customer_name = request.customer_name
+    customer_email = request.customer_email
+    customer_city = request.customer_city
+    customer_phone = request.customer_phone
+    customer_address = request.customer_address
+    discount_code = request.discount_code
+    notes = request.notes
     
     # Validate customer name (at least 3 characters, only letters and spaces)
     if not customer_name or len(customer_name.strip()) < 3:
@@ -618,15 +632,21 @@ async def checkout(
     db.refresh(order)
 
     order_items = []
-    for item in cart:
-        product = db.query(Product).filter(Product.id == item["product_id"]).first()
-        product.quantity -= item["quantity"]
+    for item in request.cart_items:
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        
+        if not product:
+            raise HTTPException(404, f"Product {item.product_id} not found")
+        if product.quantity < item.quantity:
+            raise HTTPException(400, f"Not enough stock for {product.name}")
+        
+        product.quantity -= item.quantity
         product.sold_out = product.quantity == 0
 
         order_item = OrderItem(
             order_id=order.id,
             product_id=product.id,
-            quantity=item["quantity"],
+            quantity=item.quantity,
             price=product.price
         )
         db.add(order_item)
@@ -634,7 +654,7 @@ async def checkout(
         # Store item details for email
         order_items.append({
             "product_name": product.name,
-            "quantity": item["quantity"],
+            "quantity": item.quantity,
             "price": product.price
         })
 
@@ -653,20 +673,7 @@ async def checkout(
         "items": order_items
     }))
     
-    cart.clear()
-    return {"detail": "Order placed successfully"}
-
-
-@app.get("/client/cart")
-def get_cart():
-    return cart
-
-
-@app.delete("/client/cart/remove/{product_id}")
-def remove_from_cart(product_id: int):
-    global cart
-    cart = [item for item in cart if item["product_id"] != product_id]
-    return {"detail": "Item removed from cart", "cart": cart}
+    return {"detail": "Order placed successfully", "order_id": order.id}
 
 
 @app.post("/client/calculate-shipping")
