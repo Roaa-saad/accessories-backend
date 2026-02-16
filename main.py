@@ -642,7 +642,7 @@ async def checkout(
         cart_items = request.cart_items
     else:
         # OLD: Form request with session-based cart
-        session_id = http_request.cookies.get("session_id")
+        session_id = http_request.headers.get("X-Session-ID")
         if not session_id or session_id not in user_carts:
             raise HTTPException(400, "Cart is empty")
         
@@ -650,12 +650,10 @@ async def checkout(
         if not cart:
             raise HTTPException(400, "Cart is empty")
         
-        cart_items = request.cart_items
-    else:
-        # OLD: Form request with session-based cart
-        session_id = http_request.headers.get("X-Session-ID")
-        if not session_id or session_id not in user_carts:
-            raise HTTPException(400, "Cart is empty")
+        # Convert cart to cart_items format
+        cart_items = [CartItem(product_id=item["product_id"], quantity=item["quantity"]) for item in cart]
+    
+    # Validate customer name (letters and spaces only, no numbers/special chars)
     if not re.match(r'^[a-zA-Z\s\u0600-\u06FF]+$', customer_name):
         raise HTTPException(400, "Name can only contain letters and spaces")
     
@@ -733,7 +731,7 @@ async def checkout(
     }))
     
     # Clear user's session cart after successful order
-    session_id = http_request.cookies.get("session_id")
+    session_id = http_request.headers.get("X-Session-ID")
     if session_id and session_id in user_carts:
         user_carts[session_id].clear()
     
@@ -741,14 +739,12 @@ async def checkout(
 
 
 @app.post("/client/calculate-shipping")
-    }))
+def calculate_shipping(city: str = Form(...)):
+    """Calculate shipping charge based on city"""
+    city_lower = city.lower().strip()
     
-    # Clear user's session cart after successful order
-    session_id = http_request.headers.get("X-Session-ID")
-    if session_id and session_id in user_carts:
-        user_carts[session_id].clear()
-    
-    return {"detail": "Order placed successfully", "order_id": order.id}
+    # Cairo & Giza: 65 EGP
+    cairo_giza = ['cairo', 'القاهرة', 'giza', 'الجيزة']
     
     # New Cities & Suburbs: 70 EGP
     new_cities = ['new cairo', 'القاهرة الجديدة', '6th october', '6 أكتوبر', 
