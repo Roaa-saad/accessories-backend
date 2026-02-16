@@ -581,15 +581,6 @@ def add_to_cart(
             "images": [img.image for img in product.images]
         })
 
-    return {"detail": "Added to cart", "cart": cart}
-
-@app.get("/client/cart")
-def get_cart(request: Request, response: Response):
-    """Get user's session-based cart"""
-    session_id = get_session_id(request, response)
-    cart = get_user_cart(session_id)
-    return cart
-
     return {"detail": "Added to cart", "cart": cart, "session_id": session_id}
 
 @app.get("/client/cart")
@@ -607,29 +598,6 @@ def remove_from_cart(request: Request, product_id: int):
         user_carts[session_id] = [item for item in user_carts[session_id] if item["product_id"] != product_id]
         return {"detail": "Item removed from cart", "cart": user_carts[session_id], "session_id": session_id}
     return {"detail": "Item removed from cart", "cart": [], "session_id": session_id}
-    quantity: int = Form(...),
-    db: Session = Depends(get_db)
-):
-    """Validate that product exists and has enough stock"""
-    product = db.query(Product).filter(Product.id == product_id).first()
-
-    if not product:
-        raise HTTPException(404, "Product not found")
-    if product.sold_out:
-        raise HTTPException(400, "Product is sold out")
-    if quantity > product.quantity:
-        raise HTTPException(400, f"Not enough stock. Only {product.quantity} available")
-
-    return {
-        "valid": True,
-        "product": {
-            "id": product.id,
-            "name": product.name,
-            "price": product.price,
-            "available_quantity": product.quantity,
-            "images": [img.image for img in product.images]
-        }
-    }
 
 
 class CheckoutRequest(BaseModel):
