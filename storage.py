@@ -1,4 +1,5 @@
 import os
+import io
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,7 +25,8 @@ BUCKET_NAME = "product-images"
 
 async def upload_to_supabase(file, filename: str) -> str:
     """
-    Upload file to Supabase Storage and return public URL
+    Upload file to Supabase Storage, converting to WebP format for better performance
+    Falls back to original format if conversion fails
     """
     if not supabase:
         raise Exception("Supabase client not initialized. Please set SUPABASE_ANON_KEY environment variable.")
@@ -33,17 +35,63 @@ async def upload_to_supabase(file, filename: str) -> str:
         # Read file content
         file_content = await file.read()
         
-        # Upload to Supabase Storage
-        response = supabase.storage.from_(BUCKET_NAME).upload(
-            path=filename,
-            file=file_content,
-            file_options={"content-type": file.content_type}
-        )
-        
-        # Get public URL
-        public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
-        
-        return public_url
+        # Try to convert to WebP
+        try:
+            from PIL import Image
+            
+            # Open image
+            image = Image.open(io.BytesIO(file_content))
+            
+            # Handle transparency - convert to RGB with white background
+            if image.mode in ('RGBA', 'LA', 'P'):
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                if image.mode in ('RGBA', 'LA'):
+                    background.paste(image, mask=image.split()[-1])
+                else:
+                    background.paste(image)
+                image = background
+            elif image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Optimize size - resize if too large (max 1920px width)
+            max_width = 1920
+            if image.width > max_width:
+                ratio = max_width / image.width
+                new_height = int(image.height * ratio)
+                image = image.resize((max_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Convert to WebP
+            webp_buffer = io.BytesIO()
+            image.save(webp_buffer, format='WEBP', quality=85, method=6)
+            webp_content = webp_buffer.getvalue()
+            
+            # Change extension to .webp
+            filename_base = os.path.splitext(filename)[0]
+            webp_filename = f"{filename_base}.webp"
+            
+            # Upload WebP version
+            response = supabase.storage.from_(BUCKET_NAME).upload(
+                path=webp_filename,
+                file=webp_content,
+                file_options={"content-type": "image/webp"}
+            )
+            
+            public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(webp_filename)
+            print(f"✅ Converted to WebP: {filename} → {webp_filename} ({len(file_content)} → {len(webp_content)} bytes)")
+            return public_url
+            
+        except Exception as convert_error:
+            # Fallback: upload original if conversion fails
+            print(f"⚠️ WebP conversion failed for {filename}: {convert_error}. Uploading original.")
+            response = supabase.storage.from_(BUCKET_NAME).upload(
+                path=filename,
+                file=file_content,
+                file_options={"content-type": file.content_type}
+            )
+            public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(filename)
+            return public_url
     
     except Exception as e:
         print(f"Error uploading to Supabase: {e}")
