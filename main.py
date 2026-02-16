@@ -535,73 +535,8 @@ def get_products(request: Request, db: Session = Depends(get_db)):
 
 
 
-# ================= CART =================
-# Session-based cart using X-Session-ID header (works better with CORS)
-user_carts = {}  # Dictionary: {session_id: [cart_items]}
-
-def get_session_id(request: Request) -> str:
-    """Get session ID from header or generate new one"""
-    session_id = request.headers.get("X-Session-ID")
-    if not session_id:
-        session_id = str(uuid.uuid4())
-    return session_id
-
-def get_user_cart(session_id: str) -> list:
-    """Get cart for specific user session"""
-    if session_id not in user_carts:
-        user_carts[session_id] = []
-    return user_carts[session_id]
-
-@app.post("/client/cart/add")
-def add_to_cart(
-    request: Request,
-    product_id: int = Form(...),
-    quantity: int = Form(...),
-    db: Session = Depends(get_db)
-):
-    """Add item to user's session-based cart"""
-    session_id = get_session_id(request)
-    cart = get_user_cart(session_id)
-    
-    product = db.query(Product).filter(Product.id == product_id).first()
-
-    if not product:
-        raise HTTPException(404, "Product not found")
-    if product.sold_out:
-        raise HTTPException(400, "Product is sold out")
-    if quantity > product.quantity:
-        raise HTTPException(400, "Not enough stock")
-
-    existing = next((i for i in cart if i["product_id"] == product_id), None)
-
-    if existing:
-        existing["quantity"] += quantity
-    else:
-        cart.append({
-            "product_id": product.id,
-            "name": product.name,
-            "price": product.price,
-            "quantity": quantity,
-            "images": [img.image for img in product.images]
-        })
-
-    return {"detail": "Added to cart", "cart": cart, "session_id": session_id}
-
-@app.get("/client/cart")
-def get_cart(request: Request):
-    """Get user's session-based cart"""
-    session_id = get_session_id(request)
-    cart = get_user_cart(session_id)
-    return {"cart": cart, "session_id": session_id}
-
-@app.delete("/client/cart/remove/{product_id}")
-def remove_from_cart(request: Request, product_id: int):
-    """Remove item from user's session-based cart"""
-    session_id = get_session_id(request)
-    if session_id in user_carts:
-        user_carts[session_id] = [item for item in user_carts[session_id] if item["product_id"] != product_id]
-        return {"detail": "Item removed from cart", "cart": user_carts[session_id], "session_id": session_id}
-    return {"detail": "Item removed from cart", "cart": [], "session_id": session_id}
+# ================= CART (localStorage-based, frontend manages cart) =================
+# Backend only validates products for checkout
 
 
 class CartItem(BaseModel):
@@ -616,50 +551,30 @@ class CheckoutRequest(BaseModel):
     customer_address: str
     discount_code: Optional[str] = None
     notes: Optional[str] = None
-    cart_items: Optional[List[CartItem]] = None
+    cart_items: List[CartItem]  # Required: cart comes from frontend localStorage
 
 @app.post("/client/checkout")
 async def checkout(
-    http_request: Request,
-    request: Optional[CheckoutRequest] = None,
-    customer_name: Optional[str] = Form(None),
-    customer_email: Optional[str] = Form(None),
-    customer_city: Optional[str] = Form(None),
-    customer_phone: Optional[str] = Form(None),
-    customer_address: Optional[str] = Form(None),
-    discount_code: Optional[str] = Form(None),
-    notes: Optional[str] = Form(None),
+    request: CheckoutRequest,
     db: Session = Depends(get_db)
 ):
     """
-    Checkout endpoint supporting both:
-    1. NEW: JSON with cart_items in body
-    2. OLD: Form data with session-based cart
+    Checkout endpoint - receives cart from frontend localStorage
     """
     
-    # Determine if this is new JSON request or old Form request
-    if request and request.cart_items:
-        # NEW: JSON request with cart in body
-        customer_name = request.customer_name
-        customer_email = request.customer_email
-        customer_city = request.customer_city
-        customer_phone = request.customer_phone
-        customer_address = request.customer_address
-        discount_code = request.discount_code
-        notes = request.notes
-        cart_items = request.cart_items
-    else:
-        # OLD: Form request with session-based cart
-        session_id = http_request.headers.get("X-Session-ID")
-        if not session_id or session_id not in user_carts:
-            raise HTTPException(400, "Cart is empty")
-        
-        cart = user_carts[session_id]
-        if not cart:
-            raise HTTPException(400, "Cart is empty")
-        
-        # Convert cart to cart_items format
-        cart_items = [CartItem(product_id=item["product_id"], quantity=item["quantity"]) for item in cart]
+    # Extract data from request
+    customer_name = request.customer_name
+    customer_email = request.customer_email
+    customer_city = request.customer_city
+    customer_phone = request.customer_phone
+    customer_address = request.customer_address
+    discount_code = request.discount_code
+    notes = request.notes
+    cart_items = request.cart_items
+    
+    # Validate cart is not empty
+    if not cart_items or len(cart_items) == 0:
+        raise HTTPException(400, "Cart is empty")
     
     # Validate customer name (letters and spaces only, no numbers/special chars)
     if not re.match(r'^[a-zA-Z\s\u0600-\u06FF]+$', customer_name):
@@ -737,11 +652,6 @@ async def checkout(
         "notes": notes,
         "items": order_items
     }))
-    
-    # Clear user's session cart after successful order
-    session_id = http_request.headers.get("X-Session-ID")
-    if session_id and session_id in user_carts:
-        user_carts[session_id].clear()
     
     return {"detail": "Order placed successfully", "order_id": order.id}
 
