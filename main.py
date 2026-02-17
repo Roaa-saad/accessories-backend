@@ -468,6 +468,9 @@ def get_all_orders(db: Session = Depends(get_db)):
             "customer_city": order.customer_city,
             "customer_phone": order.customer_phone,
             "customer_address": order.customer_address,
+            "discount_code": order.discount_code,
+            "notes": order.notes,
+            "total_amount": order.total_amount,
             "is_delivered": order.is_delivered,
             "items": [
                 {
