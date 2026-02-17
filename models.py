@@ -107,6 +107,7 @@ class Order(Base):
     customer_phone = Column(String, nullable=False)
     discount_code = Column(String, nullable=True)  # Discount code field
     notes = Column(String, nullable=True)  # Order notes field
+    total_amount = Column(Float, nullable=True)  # Total amount from frontend
 
     is_delivered = Column(Boolean, default=False)
 

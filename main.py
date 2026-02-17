@@ -117,6 +117,22 @@ try:
                 """))
                 conn.commit()
                 print("✅ notes column added successfully!")
+            
+            # Check and add total_amount column
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='orders' AND column_name='total_amount';
+            """))
+            
+            if result.fetchone() is None:
+                print("Adding total_amount column to orders table...")
+                conn.execute(text("""
+                    ALTER TABLE orders 
+                    ADD COLUMN total_amount FLOAT;
+                """))
+                conn.commit()
+                print("✅ total_amount column added successfully!")
     except Exception as e:
         print(f"Note: Could not add columns: {e}")
         
@@ -567,41 +583,52 @@ def add_to_cart(
     }
 
 
-class CartItem(BaseModel):
-    product_id: int
-    quantity: int
+@app.post("/client/validate-discount")
+def validate_discount(code: str = Form(...)):
+    """Validate discount code and return discount info"""
+    code_upper = code.upper().strip()
+    
+    discount_codes = {
+        "BACKTOLUMIE": {"discount": 10, "type": "percentage"},
+        "FREEGIFT": {"discount": 0, "type": "gift"}
+    }
+    
+    if code_upper in discount_codes:
+        return {
+            "valid": True,
+            "code": code_upper,
+            **discount_codes[code_upper]
+        }
+    else:
+        raise HTTPException(400, "Invalid discount code")
 
-class CheckoutRequest(BaseModel):
-    customer_name: str
-    customer_email: str
-    customer_city: str
-    customer_phone: str
-    customer_address: str
-    discount_code: Optional[str] = None
-    notes: Optional[str] = None
-    cart_items: List[CartItem]  # Required: cart comes from frontend localStorage
 
 @app.post("/client/checkout")
 async def checkout(
-    request: CheckoutRequest,
+    customer_name: str = Form(...),
+    customer_email: str = Form(...),
+    customer_phone: str = Form(...),
+    customer_address: str = Form(...),
+    customer_city: str = Form(...),
+    discount_code: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    total_amount: float = Form(...),
+    cart_items: str = Form(...),  # JSON string from frontend
     db: Session = Depends(get_db)
 ):
     """
-    Checkout endpoint - receives cart from frontend localStorage
+    Checkout endpoint - receives cart and total from frontend
     """
     
-    # Extract data from request
-    customer_name = request.customer_name
-    customer_email = request.customer_email
-    customer_city = request.customer_city
-    customer_phone = request.customer_phone
-    customer_address = request.customer_address
-    discount_code = request.discount_code
-    notes = request.notes
-    cart_items = request.cart_items
+    # Parse cart_items JSON string
+    import json
+    try:
+        items = json.loads(cart_items)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Invalid cart_items format")
     
     # Validate cart is not empty
-    if not cart_items or len(cart_items) == 0:
+    if not items or len(items) == 0:
         raise HTTPException(400, "Cart is empty")
     
     # Validate customer name (letters and spaces only, no numbers/special chars)
@@ -633,28 +660,29 @@ async def checkout(
         customer_phone=customer_phone.strip(),
         customer_address=customer_address.strip(),
         discount_code=discount_code.strip() if discount_code else None,
-        notes=notes.strip() if notes else None
+        notes=notes.strip() if notes else None,
+        total_amount=total_amount  # Store frontend-calculated total
     )
     db.add(order)
     db.commit()
     db.refresh(order)
 
     order_items = []
-    for item in cart_items:
-        product = db.query(Product).filter(Product.id == item.product_id).first()
+    for item in items:
+        product = db.query(Product).filter(Product.id == item['product_id']).first()
         
         if not product:
-            raise HTTPException(404, f"Product {item.product_id} not found")
-        if product.quantity < item.quantity:
+            raise HTTPException(404, f"Product {item['product_id']} not found")
+        if product.quantity < item['quantity']:
             raise HTTPException(400, f"Not enough stock for {product.name}")
         
-        product.quantity -= item.quantity
+        product.quantity -= item['quantity']
         product.sold_out = product.quantity == 0
 
         order_item = OrderItem(
             order_id=order.id,
             product_id=product.id,
-            quantity=item.quantity,
+            quantity=item['quantity'],
             price=product.price
         )
         db.add(order_item)
@@ -662,7 +690,7 @@ async def checkout(
         # Store item details for email
         order_items.append({
             "product_name": product.name,
-            "quantity": item.quantity,
+            "quantity": item['quantity'],
             "price": product.price
         })
 
