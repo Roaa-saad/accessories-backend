@@ -686,7 +686,7 @@ async def checkout(
             order_id=order.id,
             product_id=product.id,
             quantity=item['quantity'],
-            price=product.price
+            price=item['price']  # Store the actual price paid from frontend (includes discounts)
         )
         db.add(order_item)
         
@@ -694,7 +694,7 @@ async def checkout(
         order_items.append({
             "product_name": product.name,
             "quantity": item['quantity'],
-            "price": product.price
+            "price": item['price']  # Use the price from cart (historical price paid)
         })
 
     db.commit()
