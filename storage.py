@@ -1,6 +1,8 @@
 import os
 import io
 from dotenv import load_dotenv
+import cloudinary
+import cloudinary.uploader
 
 load_dotenv()
 
@@ -21,6 +23,13 @@ else:
     supabase = None
 
 BUCKET_NAME = "product-images"
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True
+)
 
 
 async def upload_to_supabase(file, filename: str) -> str:
@@ -53,27 +62,6 @@ async def upload_to_supabase(file, filename: str) -> str:
                 else:
                     background.paste(original_image)
                 original_image = background
-    import cloudinary
-    import cloudinary.uploader
-    cloudinary.config(
-        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-        api_key=os.getenv("CLOUDINARY_API_KEY"),
-        api_secret=os.getenv("CLOUDINARY_API_SECRET"),
-        secure=True
-    )
-
-    async def upload_to_cloudinary(file, filename: str) -> str:
-        """
-        Upload file to Cloudinary and return the secure URL
-        """
-        file_content = await file.read()
-        # Cloudinary expects bytes or file-like object
-        result = cloudinary.uploader.upload(
-            io.BytesIO(file_content),
-            public_id=f"products/{filename}",  # Uploads to 'products' folder
-            resource_type="image"
-        )
-        return result["secure_url"]
             elif original_image.mode != 'RGB':
                 original_image = original_image.convert('RGB')
             
@@ -133,5 +121,4 @@ async def delete_from_supabase(filename: str) -> bool:
         return True
     except Exception as e:
         print(f"Error deleting from Supabase: {e}")
-        return False
         return False
