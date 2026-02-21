@@ -122,3 +122,16 @@ async def delete_from_supabase(filename: str) -> bool:
     except Exception as e:
         print(f"Error deleting from Supabase: {e}")
         return False
+
+
+async def upload_to_cloudinary(file, filename: str) -> str:
+    """
+    Upload file to Cloudinary and return the secure URL
+    """
+    file_content = await file.read()
+    result = cloudinary.uploader.upload(
+        io.BytesIO(file_content),
+        public_id=f"products/{filename}",  # Uploads to 'products' folder
+        resource_type="image"
+    )
+    return result["secure_url"]
