@@ -233,13 +233,14 @@ async def add_product(
             filename = f"{int(time.time()*1000)}_{clean_name}"
             
             try:
-                # Upload to Supabase Storage
-                image_url = await upload_to_supabase(image, filename)
+                    # Upload to Cloudinary
+                    from storage import upload_to_cloudinary
+                    image_url = await upload_to_cloudinary(image, filename)
             except Exception as e:
                 db.rollback()
                 raise HTTPException(
                     status_code=500, 
-                    detail=f"Failed to upload image: {str(e)}. Please ensure SUPABASE_ANON_KEY is set in Railway environment variables."
+                        detail=f"Failed to upload image to Cloudinary: {str(e)}. Please ensure CLOUDINARY credentials are set in Railway environment variables."
                 )
 
             db.add(ProductImage(
@@ -357,8 +358,9 @@ async def add_image(
     clean_name = re.sub(r'[^a-zA-Z0-9._-]', '_', image.filename)
     filename = f"{int(time.time()*1000)}_{clean_name}"
     
-    # Upload to Supabase Storage
-    image_url = await upload_to_supabase(image, filename)
+    # Upload to Cloudinary
+    from storage import upload_to_cloudinary
+    image_url = await upload_to_cloudinary(image, filename)
 
     db.add(ProductImage(
         image=image_url,  # Store full URL
