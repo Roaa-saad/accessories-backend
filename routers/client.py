@@ -1,3 +1,9 @@
+from models import Category
+
+@router.get("/categories", response_model=list[str])
+def get_categories(db: Session = Depends(get_db)):
+    categories = db.query(Category).all()
+    return [c.name for c in categories]
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 import crud, schemas
@@ -17,6 +23,8 @@ def list_products(db: Session = Depends(get_db)):
         # أضف اسم الكاتيجوري الحالي
         if hasattr(product, 'category') and product.category:
             product.category_name = product.category.name
+            product.category_id = product.category.id
         else:
             product.category_name = None
+            product.category_id = None
     return products
