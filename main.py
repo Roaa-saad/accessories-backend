@@ -758,15 +758,40 @@ def calculate_shipping(city: str = Form(...)):
         return {"shipping_charge": 80, "city": city}
 
 
-@app.get("/client/categories/{category_id}/products")
-def get_products_by_category(
-    category_id: int,
-    db: Session = Depends(get_db)
-):
-    products = (
-        db.query(Product)
-        .filter(Product.category_id == category_id)
-        .all()
-    )
-
-    return products
+@app.get("/categories/{category_id}/products", response_model=list[dict])
+def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
+    from models import Product
+    from sqlalchemy.orm import joinedload
+    products = db.query(Product).options(joinedload(Product.images), joinedload(Product.category)).filter(Product.category_id == category_id).all()
+    result = []
+    for product in products:
+        images = []
+        for img in getattr(product, 'images', []):
+            images.append({
+                "id": img.id,
+                "image_url": img.image,
+                "sort_order": img.sort_order,
+                "is_cover": img.is_cover
+            })
+        category_obj = None
+        if getattr(product, 'category', None):
+            category_obj = {
+                "id": product.category.id,
+                "name": product.category.name
+            }
+        result.append({
+            "id": product.id,
+            "name": product.name,
+            "description": getattr(product, 'description', None),
+            "price": product.price,
+            "discount_price": getattr(product, 'discount_price', None),
+            "quantity": product.quantity,
+            "sold_out": product.sold_out,
+            "featured": getattr(product, 'featured', False),
+            "category": category_obj,
+            "image_pos_x": getattr(product, 'image_pos_x', 50),
+            "image_pos_y": getattr(product, 'image_pos_y', 50),
+            "image_scale": getattr(product, 'image_scale', 1),
+            "images": images
+        })
+    return result
