@@ -11,7 +11,12 @@ def list_products(db: Session = Depends(get_db)):
     # لو فيه صورة، ممكن نضيف URL كامل للعرض في الـ frontend
     for product in products:
         if product.image:
-            product.image_url = product.image  # ممكن تضيفي domain لو هتعرضي أونلاين
+            product.image_url = product.image
         else:
             product.image_url = None
+        # أضف اسم الكاتيجوري الحالي
+        if hasattr(product, 'category') and product.category:
+            product.category_name = product.category.name
+        else:
+            product.category_name = None
     return products
