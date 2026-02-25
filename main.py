@@ -758,7 +758,7 @@ def calculate_shipping(city: str = Form(...)):
         return {"shipping_charge": 80, "city": city}
 
 
-@app.get("/categories/{category_id}/products", response_model=list[dict])
+@app.get("/client/categories/{category_id}/products", response_model=list[dict])
 def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
     from models import Product
     from sqlalchemy.orm import joinedload
