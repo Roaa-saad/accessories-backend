@@ -358,9 +358,8 @@ async def add_image(
     clean_name = re.sub(r'[^a-zA-Z0-9._-]', '_', image.filename)
     filename = f"{int(time.time()*1000)}_{clean_name}"
     
-    # Upload to Cloudinary
-    from storage import upload_to_cloudinary
-    image_url = await upload_to_cloudinary(image, filename)
+    # Upload to Supabase Storage
+    image_url = await upload_to_supabase(image, filename)
 
     db.add(ProductImage(
         image=image_url,  # Store full URL

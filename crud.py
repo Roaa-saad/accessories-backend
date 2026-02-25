@@ -1,3 +1,28 @@
+
+def update_product(db: Session, product_id: int, update_data):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        return None
+
+    # Update category if provided
+    if hasattr(update_data, 'category_name') and update_data.category_name:
+        category = db.query(Category).filter(Category.name == update_data.category_name).first()
+        if not category:
+            category = Category(name=update_data.category_name)
+            db.add(category)
+            db.commit()
+            db.refresh(category)
+        product.category_id = category.id
+
+    # Update other fields
+    for field in ['name', 'description', 'price', 'quantity', 'image_pos_x', 'image_pos_y', 'image_scale']:
+        value = getattr(update_data, field, None)
+        if value is not None:
+            setattr(product, field, value)
+
+    db.commit()
+    db.refresh(product)
+    return product
 from sqlalchemy.orm import Session
 from models import Product, Category
 

@@ -1,3 +1,14 @@
+
+from fastapi import HTTPException
+
+# ...existing code...
+
+@router.put("/products/{product_id}", response_model=schemas.ProductResponse)
+def update_product(product_id: int, update: schemas.ProductUpdate, db: Session = Depends(get_db)):
+    product = crud.update_product(db, product_id, update)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
 from fastapi import APIRouter, UploadFile, File, Depends
 from sqlalchemy.orm import Session
 import crud, schemas

@@ -58,6 +58,7 @@ class ProductUpdate(BaseModel):
     image_pos_x: Optional[int]
     image_pos_y: Optional[int]
     image_scale: Optional[float]
+    category_name: Optional[str]
 
 
 class ImageReorderItem(BaseModel):
