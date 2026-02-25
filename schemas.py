@@ -1,4 +1,15 @@
+
 from pydantic import BaseModel
+
+# ================= PRODUCT IMAGE =================
+class ProductImageResponse(BaseModel):
+    id: int
+    image: str
+    sort_order: int
+    is_cover: bool
+
+    class Config:
+        from_attributes = True
 
 class ProductBase(BaseModel):
     name: str
@@ -16,8 +27,8 @@ class ProductResponse(ProductBase):
     id: int
     image_url: str | None
     sold_out: bool
-    category_name: str
-    category_id: int
+    category_name: str | None = None
+    category_id: int | None = None
 
     class Config:
         from_attributes = True

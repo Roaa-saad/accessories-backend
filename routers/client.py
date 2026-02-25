@@ -1,3 +1,43 @@
+# --- imports ---
+from schemas import ProductImageResponse
+from sqlalchemy.orm import joinedload
+# Endpoint: Get products by category id with all images
+@router.get("/categories/{category_id}/products", response_model=list[dict])
+def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
+    products = db.query(crud.Product).options(joinedload('images')).filter(crud.Product.category_id == category_id).all()
+    result = []
+    for product in products:
+        images = []
+        if hasattr(product, 'images'):
+            for img in product.images:
+                images.append({
+                    "id": img.id,
+                    "image": img.image,
+                    "sort_order": img.sort_order,
+                    "is_cover": img.is_cover
+                })
+        result.append({
+            "id": product.id,
+            "name": product.name,
+            "description": getattr(product, 'description', None),
+            "price": product.price,
+            "discount_price": getattr(product, 'discount_price', None),
+            "quantity": product.quantity,
+            "sold_out": product.sold_out,
+            "featured": getattr(product, 'featured', False),
+            "category_id": product.category_id,
+            "image_pos_x": getattr(product, 'image_pos_x', 50),
+            "image_pos_y": getattr(product, 'image_pos_y', 50),
+            "image_scale": getattr(product, 'image_scale', 1),
+            "images": images
+        })
+    return result
+from models import Category
+
+@router.get("/categories", response_model=list[str])
+def get_categories(db: Session = Depends(get_db)):
+    categories = db.query(Category).all()
+    return [c.name for c in categories]
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 import crud, schemas
@@ -14,8 +54,7 @@ def list_products(db: Session = Depends(get_db)):
             product.image_url = product.image
         else:
             product.image_url = None
-        # Always set the current category name
-        if product.category:
+        if hasattr(product, 'category') and product.category:
             product.category_name = product.category.name
             product.category_id = product.category.id
         else:
