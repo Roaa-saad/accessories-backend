@@ -17,6 +17,7 @@ class ProductResponse(ProductBase):
     image_url: str | None
     sold_out: bool
     category_name: str
+    category_id: int
 
     class Config:
         from_attributes = True

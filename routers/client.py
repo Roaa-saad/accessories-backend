@@ -17,6 +17,8 @@ def list_products(db: Session = Depends(get_db)):
         # Always set the current category name
         if product.category:
             product.category_name = product.category.name
+            product.category_id = product.category.id
         else:
             product.category_name = None
+            product.category_id = None
     return products
