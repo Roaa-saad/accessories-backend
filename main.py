@@ -719,44 +719,78 @@ async def checkout(
 @app.post("/client/calculate-shipping")
 def calculate_shipping(city: str = Form(...)):
     """Calculate shipping charge based on city"""
+    
     city_lower = city.lower().strip()
-    
-    # Cairo & Giza: 65 EGP
-    cairo_giza = ['cairo', 'القاهرة', 'giza', 'الجيزة']
-    
-    # New Cities & Suburbs: 70 EGP
-    new_cities = ['new cairo', 'القاهرة الجديدة', '6th october', '6 أكتوبر', 
-                  'sheikh zayed', 'الشيخ زايد', 'october', 'أكتوبر', 
-                  'nasr city', 'مدينة نصر', 'heliopolis', 'مصر الجديدة']
-    
-    # Delta, Alexandria & Canal Cities: 80 EGP
-    delta_alex = ['alexandria', 'الإسكندرية', 'alex', 'tanta', 'طنطا', 
-                  'mansoura', 'المنصورة', 'zagazig', 'الزقازيق', 
-                  'ismailia', 'الإسماعيلية', 'suez', 'السويس', 
-                  'port said', 'بورسعيد', 'damietta', 'دمياط',
-                  'kafr el sheikh', 'كفر الشيخ', 'beheira', 'البحيرة',
-                  'gharbia', 'الغربية', 'dakahlia', 'الدقهلية',
-                  'sharqia', 'الشرقية', 'qalyubia', 'القليوبية']
-    
-    # Upper Egypt: 90 EGP
-    upper_egypt = ['fayoum', 'الفيوم', 'beni suef', 'بني سويف', 
-                   'minya', 'المنيا', 'asyut', 'أسيوط', 'assiut',
-                   'sohag', 'سوهاج', 'qena', 'قنا', 'luxor', 'الأقصر',
-                   'aswan', 'أسوان', 'red sea', 'البحر الأحمر']
-    
-    # Determine shipping charge
-    if any(c in city_lower for c in cairo_giza):
-        return {"shipping_charge": 65, "city": city}
-    elif any(c in city_lower for c in new_cities):
-        return {"shipping_charge": 70, "city": city}
-    elif any(c in city_lower for c in delta_alex):
-        return {"shipping_charge": 80, "city": city}
-    elif any(c in city_lower for c in upper_egypt):
-        return {"shipping_charge": 90, "city": city}
-    else:
-        # Default shipping for unlisted cities
-        return {"shipping_charge": 80, "city": city}
 
+    # Cairo & Giza
+    cairo_giza = [
+        'cairo', 'القاهرة',
+        'giza', 'الجيزة'
+    ]
+
+    # New Cities
+    new_cities = [
+        'new cairo', 'القاهرة الجديدة',
+        '6th october', '6 أكتوبر',
+        'sheikh zayed', 'الشيخ زايد',
+        'shorouk', 'الشروق',
+        'obour', 'العبور',
+        'badr', 'بدر',
+        'new capital', 'العاصمة الإدارية',
+        'nasr city', 'مدينة نصر',
+        'heliopolis', 'مصر الجديدة'
+    ]
+
+    # Delta + Canal + Alexandria
+    delta_cities = [
+        'alexandria', 'الإسكندرية', 'alex',
+        'tanta', 'طنطا',
+        'mansoura', 'المنصورة',
+        'zagazig', 'الزقازيق',
+        'ismailia', 'الإسماعيلية',
+        'suez', 'السويس',
+        'port said', 'بورسعيد',
+        'damietta', 'دمياط',
+        'kafr el sheikh', 'كفر الشيخ',
+        'beheira', 'البحيرة',
+        'gharbia', 'الغربية',
+        'dakahlia', 'الدقهلية',
+        'sharqia', 'الشرقية',
+        'qalyubia', 'القليوبية',
+        'monufia', 'المنوفية'
+    ]
+
+    # Upper Egypt + remote areas
+    upper_egypt = [
+        'fayoum', 'الفيوم',
+        'beni suef', 'بني سويف',
+        'minya', 'المنيا',
+        'assiut', 'أسيوط',
+        'sohag', 'سوهاج',
+        'qena', 'قنا',
+        'luxor', 'الأقصر',
+        'aswan', 'أسوان',
+        'red sea', 'البحر الأحمر',
+        'matrouh', 'مطروح',
+        'new valley', 'الوادي الجديد',
+        'north sinai', 'شمال سيناء',
+        'south sinai', 'جنوب سيناء'
+    ]
+
+    if any(c in city_lower for c in cairo_giza):
+        return {"shipping_charge": 70, "city": city}
+
+    elif any(c in city_lower for c in new_cities):
+        return {"shipping_charge": 75, "city": city}
+
+    elif any(c in city_lower for c in delta_cities):
+        return {"shipping_charge": 85, "city": city}
+
+    elif any(c in city_lower for c in upper_egypt):
+        return {"shipping_charge": 95, "city": city}
+
+    else:
+        return {"shipping_charge": 85, "city": city}
 
 @app.get("/client/categories/{category_id}/products", response_model=list[dict])
 def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
