@@ -728,18 +728,18 @@ def calculate_shipping(city: str = Form(...)):
         'giza', 'الجيزة'
     ]
 
-    # New Cities
-    new_cities = [
-        'new cairo', 'القاهرة الجديدة',
-        '6th october', '6 أكتوبر',
-        'sheikh zayed', 'الشيخ زايد',
-        'shorouk', 'الشروق',
-        'obour', 'العبور',
-        'badr', 'بدر',
-        'new capital', 'العاصمة الإدارية',
-        'nasr city', 'مدينة نصر',
-        'heliopolis', 'مصر الجديدة'
-    ]
+    # # New Cities
+    # new_cities = [
+    #     'new cairo', 'القاهرة الجديدة',
+    #     '6th october', '6 أكتوبر',
+    #     'sheikh zayed', 'الشيخ زايد',
+    #     'shorouk', 'الشروق',
+    #     'obour', 'العبور',
+    #     'badr', 'بدر',
+    #     'new capital', 'العاصمة الإدارية',
+    #     'nasr city', 'مدينة نصر',
+    #     'heliopolis', 'مصر الجديدة'
+    # ]
 
     # Delta + Canal + Alexandria
     delta_cities = [
@@ -778,10 +778,10 @@ def calculate_shipping(city: str = Form(...)):
     ]
 
     if any(c in city_lower for c in cairo_giza):
-        return {"shipping_charge": 70, "city": city}
-
-    elif any(c in city_lower for c in new_cities):
         return {"shipping_charge": 75, "city": city}
+
+    # elif any(c in city_lower for c in new_cities):
+    #     return {"shipping_charge": 75, "city": city}
 
     elif any(c in city_lower for c in delta_cities):
         return {"shipping_charge": 85, "city": city}
