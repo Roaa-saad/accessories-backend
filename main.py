@@ -533,6 +533,7 @@ def get_products(request: Request, db: Session = Depends(get_db)):
             "quantity": p.quantity,
             "sold_out": p.sold_out,
             "featured": p.featured,   # ⭐ الجديد
+            "hidden": p.hidden,
             "category": {
                 "id": p.category.id,
                 "name": p.category.name
