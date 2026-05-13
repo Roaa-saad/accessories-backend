@@ -266,6 +266,7 @@ class ProductUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[float] = None
+    hidden: Optional[bool] = None
     discount_price: Optional[float] = None
     quantity: Optional[int] = None
     featured: Optional[bool] = None 

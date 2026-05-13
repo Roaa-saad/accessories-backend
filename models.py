@@ -79,7 +79,7 @@ class Product(Base):
         cascade="all, delete-orphan",
         order_by="ProductImage.sort_order"
     )
-    hidden = Column(Boolean, default=False) 
+    hidden = Column(Boolean, default=False)
 
 # ================= PRODUCT IMAGES =================
 class ProductImage(Base):
