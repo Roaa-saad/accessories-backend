@@ -65,80 +65,123 @@ def clear_uploads_folder(folder_path=UPLOAD_DIR):
 # ================= DATABASE =================
 try:
     Base.metadata.create_all(bind=engine)
-    
+
     # Add missing columns if they don't exist
     try:
         from sqlalchemy import text
+
         with engine.connect() as conn:
+
+            # ================= ORDERS =================
+
             # Check and add customer_city column
             result = conn.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='orders' AND column_name='customer_city';
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='orders'
+                AND column_name='customer_city';
             """))
-            
+
             if result.fetchone() is None:
                 print("Adding customer_city column to orders table...")
+
                 conn.execute(text("""
-                    ALTER TABLE orders 
+                    ALTER TABLE orders
                     ADD COLUMN customer_city VARCHAR;
                 """))
+
                 conn.commit()
                 print("✅ customer_city column added successfully!")
-            
+
+
             # Check and add discount_code column
             result = conn.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='orders' AND column_name='discount_code';
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='orders'
+                AND column_name='discount_code';
             """))
-            
+
             if result.fetchone() is None:
                 print("Adding discount_code column to orders table...")
+
                 conn.execute(text("""
-                    ALTER TABLE orders 
+                    ALTER TABLE orders
                     ADD COLUMN discount_code VARCHAR;
                 """))
+
                 conn.commit()
                 print("✅ discount_code column added successfully!")
-            
+
+
             # Check and add notes column
             result = conn.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='orders' AND column_name='notes';
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='orders'
+                AND column_name='notes';
             """))
-            
+
             if result.fetchone() is None:
                 print("Adding notes column to orders table...")
+
                 conn.execute(text("""
-                    ALTER TABLE orders 
+                    ALTER TABLE orders
                     ADD COLUMN notes VARCHAR;
                 """))
+
                 conn.commit()
                 print("✅ notes column added successfully!")
-            
+
+
             # Check and add total_amount column
             result = conn.execute(text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='orders' AND column_name='total_amount';
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='orders'
+                AND column_name='total_amount';
             """))
-            
+
             if result.fetchone() is None:
                 print("Adding total_amount column to orders table...")
+
                 conn.execute(text("""
-                    ALTER TABLE orders 
+                    ALTER TABLE orders
                     ADD COLUMN total_amount FLOAT;
                 """))
+
                 conn.commit()
                 print("✅ total_amount column added successfully!")
+
+
+            # ================= PRODUCTS =================
+
+            # Check and add hidden column
+            result = conn.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='products'
+                AND column_name='hidden';
+            """))
+
+            if result.fetchone() is None:
+                print("Adding hidden column to products table...")
+
+                conn.execute(text("""
+                    ALTER TABLE products
+                    ADD COLUMN hidden BOOLEAN DEFAULT FALSE;
+                """))
+
+                conn.commit()
+                print("✅ hidden column added successfully!")
+
     except Exception as e:
         print(f"Note: Could not add columns: {e}")
-        
+
 except Exception as e:
     print(f"Warning: Could not create database tables: {e}")
     print("This may be expected if the database is not available during startup.")
+
 
 def get_db():
     db = SessionLocal()
@@ -146,7 +189,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
 
 # =================================================
 # ================= ADMIN =========================
