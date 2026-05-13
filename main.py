@@ -823,6 +823,7 @@ def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
             "quantity": product.quantity,
             "sold_out": product.sold_out,
             "featured": getattr(product, 'featured', False),
+            "hidden": getattr(product, 'hidden', False),
             "category": category_obj,
             "image_pos_x": getattr(product, 'image_pos_x', 50),
             "image_pos_y": getattr(product, 'image_pos_y', 50),
