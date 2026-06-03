@@ -110,6 +110,7 @@ class Order(Base):
     total_amount = Column(Float, nullable=True)  # Total amount from frontend
 
     is_delivered = Column(Boolean, default=False)
+    is_cancelled = Column(Boolean, default=False)
 
     items = relationship(
         "OrderItem",
