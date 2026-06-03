@@ -61,7 +61,6 @@ def clear_uploads_folder(folder_path=UPLOAD_DIR):
     return deleted_files
 
 
-
 # ================= DATABASE =================
 try:
     Base.metadata.create_all(bind=engine)
@@ -133,6 +132,7 @@ try:
                 conn.commit()
                 print("✅ notes column added successfully!")
 
+
             # Check and add total_amount column
             result = conn.execute(text("""
                 SELECT column_name
@@ -194,13 +194,20 @@ try:
                 conn.commit()
                 print("✅ hidden column added successfully!")
 
+    except Exception as e:
+        print(f"Note: Could not add columns: {e}")
+
+except Exception as e:
+    print(f"Warning: Could not create database tables: {e}")
+    print("This may be expected if the database is not available during startup.")
+
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
 # =================================================
 # ================= ADMIN =========================
 # =================================================
