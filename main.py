@@ -892,3 +892,46 @@ def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
             "images": images
         })
     return result
+
+@app.put("/admin/orders/{order_id}/cancel")
+def cancel_order(
+    order_id: int,
+    db: Session = Depends(get_db)
+):
+    order = db.query(Order).filter(
+        Order.id == order_id
+    ).first()
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    if order.is_cancelled:
+        raise HTTPException(
+            status_code=400,
+            detail="Order already cancelled"
+        )
+
+    # رجع المنتجات للمخزون
+    for item in order.items:
+        product = db.query(Product).filter(
+            Product.id == item.product_id
+        ).first()
+
+        if product:
+            product.quantity += item.quantity
+            product.sold_out = False
+
+    order.is_cancelled = True
+    order.is_delivered = False
+
+    db.commit()
+    db.refresh(order)
+
+    return {
+        "detail": "Order cancelled successfully",
+        "order_id": order.id,
+        "is_cancelled": True
+    }
