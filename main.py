@@ -893,8 +893,8 @@ def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
         })
     return result
 
-@app.put("/admin/orders/{order_id}/cancel")
-def cancel_order(
+@app.put("/admin/orders/{order_id}/restore")
+def restore_order(
     order_id: int,
     db: Session = Depends(get_db)
 ):
@@ -908,30 +908,34 @@ def cancel_order(
             detail="Order not found"
         )
 
-    if order.is_cancelled:
+    if not order.is_cancelled:
         raise HTTPException(
             status_code=400,
-            detail="Order already cancelled"
+            detail="Order is not cancelled"
         )
 
-    # رجع المنتجات للمخزون
+    # خصم الكمية تاني
     for item in order.items:
         product = db.query(Product).filter(
             Product.id == item.product_id
         ).first()
 
-        if product:
-            product.quantity += item.quantity
-            product.sold_out = False
+        if not product:
+            continue
 
-    order.is_cancelled = True
-    order.is_delivered = False
+        if product.quantity < item.quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough stock for {product.name}"
+            )
+
+        product.quantity -= item.quantity
+        product.sold_out = product.quantity == 0
+
+    order.is_cancelled = False
 
     db.commit()
-    db.refresh(order)
 
     return {
-        "detail": "Order cancelled successfully",
-        "order_id": order.id,
-        "is_cancelled": True
+        "detail": "Order restored successfully"
     }
