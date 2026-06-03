@@ -534,6 +534,7 @@ def get_all_orders(db: Session = Depends(get_db)):
             "notes": order.notes,
             "total_amount": order.total_amount,
             "is_delivered": order.is_delivered,
+            "is_cancelled": order.is_cancelled,
             "items": [
                 {
                     "product_id": item.product_id,
