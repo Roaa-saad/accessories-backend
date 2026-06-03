@@ -153,24 +153,24 @@ try:
                 conn.commit()
                 print("✅ total_amount column added successfully!")
 
-                # Check and add is_cancelled column
-result = conn.execute(text("""
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_name='orders'
-    AND column_name='is_cancelled';
-"""))
+                                # Check and add is_cancelled column
+                result = conn.execute(text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name='orders'
+                    AND column_name='is_cancelled';
+                """))
 
-if result.fetchone() is None:
-    print("Adding is_cancelled column to orders table...")
+                if result.fetchone() is None:
+                    print("Adding is_cancelled column to orders table...")
 
-    conn.execute(text("""
-        ALTER TABLE orders
-        ADD COLUMN is_cancelled BOOLEAN DEFAULT FALSE;
-    """))
+                    conn.execute(text("""
+                        ALTER TABLE orders
+                        ADD COLUMN is_cancelled BOOLEAN DEFAULT FALSE;
+                    """))
 
-    conn.commit()
-    print("✅ is_cancelled column added successfully!")
+                    conn.commit()
+                    print("✅ is_cancelled column added successfully!")
 
 
             # ================= PRODUCTS =================
