@@ -782,7 +782,7 @@ async def checkout(
 @app.post("/client/calculate-shipping")
 def calculate_shipping(city: str = Form(...)):
     """Calculate shipping charge based on city"""
-    
+
     city_lower = city.lower().strip()
 
     # Cairo & Giza
@@ -790,19 +790,6 @@ def calculate_shipping(city: str = Form(...)):
         'cairo', 'القاهرة',
         'giza', 'الجيزة'
     ]
-
-    # # New Cities
-    # new_cities = [
-    #     'new cairo', 'القاهرة الجديدة',
-    #     '6th october', '6 أكتوبر',
-    #     'sheikh zayed', 'الشيخ زايد',
-    #     'shorouk', 'الشروق',
-    #     'obour', 'العبور',
-    #     'badr', 'بدر',
-    #     'new capital', 'العاصمة الإدارية',
-    #     'nasr city', 'مدينة نصر',
-    #     'heliopolis', 'مصر الجديدة'
-    # ]
 
     # Delta + Canal + Alexandria
     delta_cities = [
@@ -823,37 +810,122 @@ def calculate_shipping(city: str = Form(...)):
         'monufia', 'المنوفية'
     ]
 
-    # Upper Egypt + remote areas
+    # Upper Egypt
     upper_egypt = [
         'fayoum', 'الفيوم',
         'beni suef', 'بني سويف',
         'minya', 'المنيا',
         'assiut', 'أسيوط',
         'sohag', 'سوهاج',
-        'qena', 'قنا',
-        'luxor', 'الأقصر',
-        'aswan', 'أسوان',
-        'red sea', 'البحر الأحمر',
-        'matrouh', 'مطروح',
-        'new valley', 'الوادي الجديد',
-        'north sinai', 'شمال سيناء',
-        'south sinai', 'جنوب سيناء'
+        'qena', 'قنا'
+    ]
+
+    # Hurghada
+    hurghada = [
+        'hurghada',
+        'الغردقة'
+    ]
+
+    # Aswan
+    aswan = [
+        'aswan',
+        'أسوان'
+    ]
+
+    # Marsa Matrouh
+    matrouh = [
+        'matrouh',
+        'مطروح',
+        'marsa matrouh',
+        'مرسى مطروح'
+    ]
+
+    # North Coast
+    north_coast = [
+        'north coast',
+        'الساحل الشمالي'
+    ]
+
+    # New Valley
+    new_valley = [
+        'new valley',
+        'الوادي الجديد'
+    ]
+
+    # Remote Areas
+    remote_145 = [
+        'red sea',
+        'البحر الأحمر',
+        'sharm el sheikh',
+        'شرم الشيخ',
+        'arish',
+        'العريش',
+        'el arish',
+        'north sinai',
+        'شمال سيناء',
+        'south sinai',
+        'جنوب سيناء'
     ]
 
     if any(c in city_lower for c in cairo_giza):
-        return {"shipping_charge": 75, "city": city}
-
-    # elif any(c in city_lower for c in new_cities):
-    #     return {"shipping_charge": 75, "city": city}
+        return {
+            "shipping_charge": 75,
+            "city": city
+        }
 
     elif any(c in city_lower for c in delta_cities):
-        return {"shipping_charge": 85, "city": city}
+        return {
+            "shipping_charge": 85,
+            "city": city
+        }
 
     elif any(c in city_lower for c in upper_egypt):
-        return {"shipping_charge": 95, "city": city}
+        return {
+            "shipping_charge": 95,
+            "city": city
+        }
+
+    elif any(c in city_lower for c in hurghada):
+        return {
+            "shipping_charge": 125,
+            "city": city
+        }
+
+    elif any(c in city_lower for c in aswan):
+        return {
+            "shipping_charge": 125,
+            "city": city
+        }
+
+    elif any(c in city_lower for c in matrouh):
+        return {
+            "shipping_charge": 130,
+            "city": city
+        }
+
+    elif any(c in city_lower for c in north_coast):
+        return {
+            "shipping_charge": 135,
+            "city": city
+        }
+
+    elif any(c in city_lower for c in new_valley):
+        return {
+            "shipping_charge": 135,
+            "city": city
+        }
+
+    elif any(c in city_lower for c in remote_145):
+        return {
+            "shipping_charge": 145,
+            "city": city
+        }
 
     else:
-        return {"shipping_charge": 85, "city": city}
+        return {
+            "shipping_charge": 85,
+            "city": city
+        }
 
 @app.get("/client/categories/{category_id}/products", response_model=list[dict])
 def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
