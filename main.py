@@ -909,13 +909,36 @@ def cancel_order(
             detail="Order not found"
         )
 
+    # لو متكنسل بالفعل -> Restore
     if order.is_cancelled:
-        raise HTTPException(
-            status_code=400,
-            detail="Order already cancelled"
-        )
 
-    # رجع المنتجات للمخزون
+        for item in order.items:
+            product = db.query(Product).filter(
+                Product.id == item.product_id
+            ).first()
+
+            if product:
+                product.quantity -= item.quantity
+
+                if product.quantity < 0:
+                    product.quantity = 0
+
+                product.sold_out = (
+                    product.quantity == 0
+                )
+
+        order.is_cancelled = False
+
+        db.commit()
+        db.refresh(order)
+
+        return {
+            "detail": "Order restored successfully",
+            "order_id": order.id,
+            "is_cancelled": False
+        }
+
+    # لو Pending -> Cancel
     for item in order.items:
         product = db.query(Product).filter(
             Product.id == item.product_id
