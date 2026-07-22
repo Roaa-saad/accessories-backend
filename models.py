@@ -160,8 +160,9 @@ class OrderItem(Base):
 
 
 # ================= ANNOUNCEMENT BAR =================
+# ================= ANNOUNCEMENT BAR =================
 class AnnouncementSetting(Base):
-    __tablename__  = "announcement_settings"
+    __tablename__ = "announcement_settings"
 
     id = Column(
         Integer,
@@ -188,6 +189,7 @@ class AnnouncementSetting(Base):
         onupdate=datetime.utcnow,
     )
 
+
 # ================= ANNOUNCEMENTS CRUD =================
 class Announcement(Base):
     __tablename__ = "announcements"
@@ -196,11 +198,13 @@ class Announcement(Base):
     content = Column(String(300), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     sort_order = Column(Integer, nullable=False, default=0)
+
     created_at = Column(
         DateTime,
         nullable=False,
         default=datetime.utcnow,
     )
+
     updated_at = Column(
         DateTime,
         nullable=False,
