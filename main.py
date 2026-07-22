@@ -7,7 +7,6 @@ import shutil, os, time, re, asyncio, uuid
 from routers.announcements import router as announcements_router
 
 from database import Base, engine, SessionLocal
-from email_service import send_order_notification
 from storage import upload_to_supabase, delete_from_supabase
 
 from models import (
