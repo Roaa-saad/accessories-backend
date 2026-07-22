@@ -1,13 +1,17 @@
+from datetime import datetime
+
 from sqlalchemy import (
+    Boolean,
     Column,
+    DateTime,
+    Float,
+    ForeignKey,
     Integer,
     String,
-    Float,
-    Boolean,
-    ForeignKey,
-    Text
+    Text,
 )
 from sqlalchemy.orm import relationship
+
 from database import Base
 
 
@@ -21,7 +25,7 @@ class Category(Base):
     products = relationship(
         "Product",
         back_populates="category",
-        cascade="all, delete"
+        cascade="all, delete",
     )
 
 
@@ -30,25 +34,17 @@ class Admin(Base):
     __tablename__ = "admins"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
+    email = Column(
+        String,
+        unique=True,
+        index=True,
+        nullable=False,
+    )
     password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
 
 
 # ================= PRODUCT =================
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Float,
-    Boolean,
-    ForeignKey,
-    Text
-)
-from sqlalchemy.orm import relationship
-from database import Base
-
-
 class Product(Base):
     __tablename__ = "products"
 
@@ -63,11 +59,17 @@ class Product(Base):
     quantity = Column(Integer, nullable=False)
     sold_out = Column(Boolean, default=False)
 
-    # ⭐ FEATURED (الجديد)
     featured = Column(Boolean, default=False)
 
-    category_id = Column(Integer, ForeignKey("categories.id"))
-    category = relationship("Category", back_populates="products")
+    category_id = Column(
+        Integer,
+        ForeignKey("categories.id"),
+    )
+
+    category = relationship(
+        "Category",
+        back_populates="products",
+    )
 
     image_pos_x = Column(Integer, default=50)
     image_pos_y = Column(Integer, default=50)
@@ -77,37 +79,48 @@ class Product(Base):
         "ProductImage",
         back_populates="product",
         cascade="all, delete-orphan",
-        order_by="ProductImage.sort_order"
+        order_by="ProductImage.sort_order",
     )
+
     hidden = Column(Boolean, default=False)
+
 
 # ================= PRODUCT IMAGES =================
 class ProductImage(Base):
-    __tablename__ = "product_images"
+    __tablename__  = "product_images"
 
     id = Column(Integer, primary_key=True, index=True)
     image = Column(String, nullable=False)
 
-    sort_order = Column(Integer, default=0)    # ترتيب الصورة
-    is_cover = Column(Boolean, default=False)  # هل كافر؟
+    sort_order = Column(Integer, default=0)
+    is_cover = Column(Boolean, default=False)
 
-    product_id = Column(Integer, ForeignKey("products.id"))
-    product = relationship("Product", back_populates="images")
+    product_id = Column(
+        Integer,
+        ForeignKey("products.id"),
+    )
+
+    product = relationship(
+        "Product",
+        back_populates="images",
+    )
 
 
 # ================= ORDER =================
 class Order(Base):
-    __tablename__ = "orders"
+    __tablename__  = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
+
     customer_name = Column(String, nullable=False)
     customer_email = Column(String, nullable=False)
-    customer_city = Column(String, nullable=True)  # New city field
+    customer_city = Column(String, nullable=True)
     customer_address = Column(String, nullable=False)
     customer_phone = Column(String, nullable=False)
-    discount_code = Column(String, nullable=True)  # Discount code field
-    notes = Column(String, nullable=True)  # Order notes field
-    total_amount = Column(Float, nullable=True)  # Total amount from frontend
+
+    discount_code = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+    total_amount = Column(Float, nullable=True)
 
     is_delivered = Column(Boolean, default=False)
     is_cancelled = Column(Boolean, default=False)
@@ -115,19 +128,62 @@ class Order(Base):
     items = relationship(
         "OrderItem",
         back_populates="order",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
 
 # ================= ORDER ITEMS =================
 class OrderItem(Base):
-    __tablename__ = "order_items"
+    __tablename__  = "order_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"))
-    product_id = Column(Integer, ForeignKey("products.id"))
+
+    order_id = Column(
+        Integer,
+        ForeignKey("orders.id"),
+    )
+
+    product_id = Column(
+        Integer,
+        ForeignKey("products.id"),
+    )
+
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
 
-    order = relationship("Order", back_populates="items")
+    order = relationship(
+        "Order",
+        back_populates="items",
+    )
+
     product = relationship("Product")
+
+
+# ================= ANNOUNCEMENT BAR =================
+class AnnouncementSetting(Base):
+    __tablename__  = "announcement_settings"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        default=1,
+    )
+
+    content = Column(
+        Text,
+        nullable=False,
+        default="Free Shipping on orders over 900 EGP",
+    )
+
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
