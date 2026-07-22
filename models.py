@@ -187,3 +187,23 @@ class AnnouncementSetting(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
+
+# ================= ANNOUNCEMENTS CRUD =================
+class Announcement(Base):
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(String(300), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
