@@ -48,18 +48,25 @@ default_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
 ]
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", ",".join(default_origins)).split(",")
+configured_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+
+# Keep the known production/local origins even if Railway has an older
+# ALLOWED_ORIGINS value.  This avoids an accidental CORS lockout after deploy.
+allowed_origins = list(
+    dict.fromkeys(origin.rstrip("/") for origin in [*default_origins, *configured_origins])
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["*"],
+    max_age=86400,
 )
 
 
