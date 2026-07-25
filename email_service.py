@@ -9,6 +9,23 @@ import httpx
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
+def get_brevo_config_status() -> dict:
+    """Return safe configuration diagnostics without exposing secret values."""
+    required = {
+        "BREVO_API_KEY": os.getenv("BREVO_API_KEY"),
+        "BREVO_SENDER_EMAIL": os.getenv("BREVO_SENDER_EMAIL"),
+        "ADMIN_EMAIL": os.getenv("ADMIN_EMAIL"),
+    }
+    missing = [name for name, value in required.items() if not str(value or "").strip()]
+    return {
+        "ready": not missing,
+        "missing": missing,
+        "sender_configured": bool(str(required["BREVO_SENDER_EMAIL"] or "").strip()),
+        "admin_configured": bool(str(required["ADMIN_EMAIL"] or "").strip()),
+        "api_key_configured": bool(str(required["BREVO_API_KEY"] or "").strip()),
+    }
+
+
 def _clean(value: Any) -> str:
     return str(value or "").strip()
 
@@ -170,23 +187,26 @@ async def _send_email(
     recipient_name: str,
     subject: str,
     html_content: str,
-) -> bool:
+) -> dict:
     api_key = _clean(os.getenv("BREVO_API_KEY"))
     sender_email = _clean(os.getenv("BREVO_SENDER_EMAIL")).lower()
     sender_name = _clean(os.getenv("BREVO_SENDER_NAME") or "LUMIIE")
     reply_to_email = _clean(os.getenv("BREVO_REPLY_TO_EMAIL")).lower()
 
     if not api_key:
-        print("BREVO: BREVO_API_KEY is missing", flush=True)
-        return False
+        error = "BREVO_API_KEY is missing"
+        print(f"BREVO CONFIG ERROR: {error}", flush=True)
+        return {"ok": False, "error": error}
 
     if not sender_email:
-        print("BREVO: BREVO_SENDER_EMAIL is missing", flush=True)
-        return False
+        error = "BREVO_SENDER_EMAIL is missing"
+        print(f"BREVO CONFIG ERROR: {error}", flush=True)
+        return {"ok": False, "error": error}
 
     if not recipient_email:
-        print("BREVO: recipient email is missing", flush=True)
-        return False
+        error = "recipient email is missing"
+        print(f"BREVO CONFIG ERROR: {error}", flush=True)
+        return {"ok": False, "error": error}
 
     payload: dict[str, Any] = {
         "sender": {
@@ -218,7 +238,13 @@ async def _send_email(
 
     retryable_statuses = {408, 425, 429, 500, 502, 503, 504}
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    print(
+        f"BREVO: sending '{subject}' to {recipient_email} "
+        f"from {sender_email}",
+        flush=True,
+    )
+
+    async with httpx.AsyncClient(timeout=12.0) as client:
         for attempt in range(1, 4):
             try:
                 response = await client.post(
@@ -228,11 +254,22 @@ async def _send_email(
                 )
 
                 if 200 <= response.status_code < 300:
+                    try:
+                        response_data = response.json()
+                    except ValueError:
+                        response_data = {"raw": response.text}
+                    message_id = response_data.get("messageId")
                     print(
-                        f"BREVO: email accepted for {recipient_email}",
+                        f"BREVO: email accepted for {recipient_email}; "
+                        f"message_id={message_id}",
                         flush=True,
                     )
-                    return True
+                    return {
+                        "ok": True,
+                        "recipient": recipient_email,
+                        "status_code": response.status_code,
+                        "message_id": message_id,
+                    }
 
                 print(
                     "BREVO ERROR:",
@@ -242,21 +279,34 @@ async def _send_email(
                 )
 
                 if response.status_code not in retryable_statuses:
-                    return False
+                    return {
+                        "ok": False,
+                        "recipient": recipient_email,
+                        "status_code": response.status_code,
+                        "error": response.text,
+                    }
 
             except (httpx.TimeoutException, httpx.RequestError) as error:
                 print(f"BREVO NETWORK ERROR: {error}", flush=True)
             except Exception as error:
                 print(f"BREVO UNEXPECTED ERROR: {error}", flush=True)
-                return False
+                return {
+                    "ok": False,
+                    "recipient": recipient_email,
+                    "error": f"{type(error).__name__}: {error}",
+                }
 
             if attempt < 3:
                 await asyncio.sleep(attempt * 2)
 
-    return False
+    return {
+        "ok": False,
+        "recipient": recipient_email,
+        "error": "Brevo request failed after retries",
+    }
 
 
-async def send_order_notification(order_data: dict) -> None:
+async def send_order_notification(order_data: dict) -> dict:
     """
     Automatically sends two transactional emails after the order is saved:
     1) admin notification
@@ -300,9 +350,37 @@ async def send_order_notification(order_data: dict) -> None:
                 flush=True,
             )
 
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if not tasks:
+            return {
+                "ok": False,
+                "order_id": order_id,
+                "error": "No email recipients were configured",
+            }
+
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = []
+        for result in raw_results:
+            if isinstance(result, Exception):
+                results.append(
+                    {
+                        "ok": False,
+                        "error": f"{type(result).__name__}: {result}",
+                    }
+                )
+            else:
+                results.append(result)
+
+        return {
+            "ok": all(item.get("ok") for item in results),
+            "order_id": order_id,
+            "results": results,
+        }
 
     except Exception as error:
         # The order is already saved; email problems must not affect checkout.
         print(f"BREVO ORDER EMAIL ERROR: {error}", flush=True)
+        return {
+            "ok": False,
+            "order_id": _clean(order_data.get("order_id") or "New"),
+            "error": f"{type(error).__name__}: {error}",
+        }

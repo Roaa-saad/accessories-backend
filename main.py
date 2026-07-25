@@ -16,10 +16,34 @@ from database import Base, engine, SessionLocal
 from storage import upload_to_supabase, delete_from_supabase
 
 try:
-    from email_service import send_order_notification
-except ImportError:
+    from email_service import (
+        get_brevo_config_status,
+        send_order_notification,
+    )
+    print("BREVO: email_service.py imported successfully", flush=True)
+except Exception as email_import_error:
+    _EMAIL_IMPORT_ERROR = (
+        f"{type(email_import_error).__name__}: {email_import_error}"
+    )
+    print(f"BREVO IMPORT ERROR: {_EMAIL_IMPORT_ERROR}", flush=True)
+
+    def get_brevo_config_status():
+        return {
+            "ready": False,
+            "missing": ["email_service_import"],
+            "import_error": _EMAIL_IMPORT_ERROR,
+        }
+
     async def send_order_notification(order_data):
-        print("Email service is not available; order email was skipped.")
+        print(
+            "BREVO: email service unavailable; order email was skipped",
+            flush=True,
+        )
+        return {
+            "ok": False,
+            "error": "email_service_import_failed",
+            "details": _EMAIL_IMPORT_ERROR,
+        }
 
 from models import (
     Product,
@@ -42,6 +66,15 @@ import re
 app = FastAPI()
 app.include_router(announcements_router)
 app.include_router(coupons_router)
+
+
+@app.on_event("startup")
+async def log_brevo_configuration():
+    # Never print API keys or passwords. This only shows which names are missing.
+    print(
+        f"BREVO CONFIG STATUS: {get_brevo_config_status()}",
+        flush=True,
+    )
 
 # ================= CORS =================
 default_origins = [
@@ -1074,24 +1107,44 @@ async def checkout(
         db.rollback()
         raise HTTPException(500, f"Failed to create order: {error}")
 
-    asyncio.create_task(
-        send_order_notification(
-            {
-                "order_id": order.id,
-                "customer_name": customer_name,
-                "customer_email": customer_email,
-                "customer_phone": customer_phone,
-                "customer_city": customer_city,
-                "customer_address": customer_address,
-                "discount_code": coupon_result["code"] or None,
-                "discount_amount": discount_amount,
-                "shipping_amount": shipping_amount,
-                "total_amount": calculated_total,
-                "notes": notes,
-                "items": email_items,
-            }
+    email_payload = {
+        "order_id": order.id,
+        "customer_name": customer_name,
+        "customer_email": customer_email,
+        "customer_phone": customer_phone,
+        "customer_city": customer_city,
+        "customer_address": customer_address,
+        "discount_code": coupon_result["code"] or None,
+        "discount_amount": discount_amount,
+        "shipping_amount": shipping_amount,
+        "total_amount": calculated_total,
+        "notes": notes,
+        "items": email_items,
+    }
+
+    # The order is already committed. We start and finish the Brevo request here
+    # so Railway cannot silently discard an unobserved background task. Email
+    # failure is logged but never cancels or changes the saved order.
+    try:
+        email_result = await asyncio.wait_for(
+            send_order_notification(email_payload),
+            timeout=20,
         )
-    )
+        print(
+            f"BREVO ORDER RESULT #{order.id}: {email_result}",
+            flush=True,
+        )
+    except asyncio.TimeoutError:
+        print(
+            f"BREVO ORDER EMAIL TIMEOUT for order #{order.id}",
+            flush=True,
+        )
+    except Exception as email_error:
+        print(
+            f"BREVO ORDER EMAIL FAILED for order #{order.id}: "
+            f"{type(email_error).__name__}: {email_error}",
+            flush=True,
+        )
 
     return {
         "detail": "Order placed successfully",
