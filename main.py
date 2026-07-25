@@ -1275,3 +1275,41 @@ def cancel_order(
         "order_id": order.id,
         "is_cancelled": True
     }
+
+@app.get("/admin/products")
+def get_all_products(
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
+):
+    products = db.query(Product).all()
+
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "price": p.price,
+            "discount_price": p.discount_price,
+            "quantity": p.quantity,
+            "sold_out": p.sold_out,
+            "featured": p.featured,
+            "hidden": p.hidden,
+            "category": {
+                "id": p.category.id,
+                "name": p.category.name
+            } if p.category else None,
+            "image_pos_x": p.image_pos_x,
+            "image_pos_y": p.image_pos_y,
+            "image_scale": p.image_scale,
+            "images": [
+                {
+                    "id": img.id,
+                    "image_url": img.image,
+                    "sort_order": img.sort_order,
+                    "is_cover": img.is_cover
+                }
+                for img in p.images
+            ]
+        }
+        for p in products
+    ]
