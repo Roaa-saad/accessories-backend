@@ -125,6 +125,10 @@ class Order(Base):
     shipping_amount = Column(Float, nullable=True)
     total_amount = Column(Float, nullable=True)
 
+    # Client-generated idempotency key. It prevents accidental duplicate orders
+    # when the customer double-clicks or the network retries the same checkout.
+    checkout_token = Column(String(64), nullable=True, unique=True, index=True)
+
     is_delivered = Column(Boolean, default=False)
     is_cancelled = Column(Boolean, default=False)
 

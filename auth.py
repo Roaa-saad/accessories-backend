@@ -1,34 +1,35 @@
-from datetime import datetime, timedelta
-from jose import jwt, JWTError
+import os
+from datetime import datetime, timedelta, timezone
+
+from jose import jwt
 from passlib.context import CryptContext
 
-SECRET_KEY = "CHANGE_ME_SECRET"
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY environment variable is required")
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
+ACCESS_TOKEN_EXPIRE_HOURS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_HOURS", "24"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 def hash_password(password: str):
     return pwd_context.hash(password)
 
+
 def verify_password(plain: str, hashed: str):
     try:
-        print(f"Verifying password - Length: {len(plain)}, Bytes: {len(plain.encode('utf-8'))}")
-        # Ensure the plain password is within bcrypt's 72 byte limit
-        plain_bytes = plain.encode('utf-8')
+        plain_bytes = plain.encode("utf-8")
         if len(plain_bytes) > 72:
-            print("Password too long, truncating to 72 bytes")
-            plain = plain_bytes[:72].decode('utf-8', errors='ignore')
-        
-        result = pwd_context.verify(plain, hashed)
-        print(f"Verification result: {result}")
-        return result
-    except Exception as e:
-        print(f"Password verification error: {type(e).__name__}: {e}")
+            return False
+        return pwd_context.verify(plain, hashed)
+    except Exception:
         return False
+
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

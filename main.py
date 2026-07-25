@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 import shutil, os, time, re, asyncio, uuid
 from routers.announcements import router as announcements_router
@@ -31,6 +32,7 @@ from models import (
 
 from schemas import AdminLogin
 from auth import verify_password, create_access_token
+from auth_dependency import get_current_admin
 from pydantic import BaseModel, EmailStr, validator
 import re
 
@@ -41,16 +43,23 @@ app.include_router(announcements_router)
 app.include_router(coupons_router)
 
 # ================= CORS =================
+default_origins = [
+    "https://accessories-store-nu.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", ",".join(default_origins)).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://accessories-store-nu.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173"
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -228,6 +237,15 @@ try:
                 ALTER TABLE orders
                 ADD COLUMN IF NOT EXISTS shipping_amount FLOAT;
             """))
+            conn.execute(text("""
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS checkout_token VARCHAR(64);
+            """))
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_checkout_token
+                ON orders (checkout_token)
+                WHERE checkout_token IS NOT NULL;
+            """))
             conn.commit()
 
             # ================= PRODUCTS =================
@@ -271,7 +289,7 @@ def get_db():
 
 
 @app.delete("/admin/clear-uploads")
-def clear_uploads():
+def clear_uploads(_admin_email: str = Depends(get_current_admin)):
     deleted_count = clear_uploads_folder()
     return {
         "detail": "Uploads folder cleared successfully",
@@ -287,7 +305,8 @@ class CategoryCreate(BaseModel):
 @app.post("/admin/categories")
 def add_category(
     data: CategoryCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
 ):
     existing = db.query(Category).filter(Category.name == data.name).first()
     if existing:
@@ -315,7 +334,8 @@ async def add_product(
     category_name: str = Form(...),
     images: List[UploadFile] = File(...),
     featured: Optional[bool] = Form(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
 ):
     try:
         print(f"Adding product: {name}")
@@ -398,7 +418,8 @@ class ProductUpdate(BaseModel):
 def update_product(
     product_id: int,
     data: ProductUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
 ):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -443,7 +464,8 @@ class ImageReorderRequest(BaseModel):
 def reorder_images(
     product_id: int,
     data: ImageReorderRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
 ):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -480,7 +502,8 @@ def reorder_images(
 async def add_image(
     product_id: int,
     image: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
 ):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -506,7 +529,11 @@ async def add_image(
 
 # -------- DELETE IMAGE --------
 @app.delete("/admin/images/{image_id}")
-async def delete_image(image_id: int, db: Session = Depends(get_db)):
+async def delete_image(
+    image_id: int,
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
+):
     img = db.query(ProductImage).filter(ProductImage.id == image_id).first()
     if not img:
         raise HTTPException(404, "Image not found")
@@ -527,7 +554,11 @@ async def delete_image(image_id: int, db: Session = Depends(get_db)):
 
 # -------- DELETE PRODUCT --------
 @app.delete("/admin/delete/{product_id}")
-async def delete_product(product_id: int, db: Session = Depends(get_db)):
+async def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
+):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
@@ -564,10 +595,9 @@ def admin_login(data: AdminLogin, db: Session = Depends(get_db)):
         admin = db.query(Admin).filter(Admin.email == data.email).first()
         print(f"Admin found: {admin is not None}")
         
-        if not admin:
-            print("Admin not found")
+        if not admin or not admin.is_active:
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        
+
         password_valid = verify_password(data.password, admin.password)
         print(f"Password valid: {password_valid}")
         
@@ -588,7 +618,10 @@ def admin_login(data: AdminLogin, db: Session = Depends(get_db)):
 
 
 @app.get("/admin/orders")
-def get_all_orders(db: Session = Depends(get_db)):
+def get_all_orders(
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
+):
     orders = db.query(Order).order_by(Order.id.desc()).all()
 
     response = []
@@ -629,7 +662,8 @@ def get_all_orders(db: Session = Depends(get_db)):
 def toggle_order_delivery(
     order_id: int,
     delivered: bool = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
 ):
     order = db.query(Order).filter(Order.id == order_id).first()
 
@@ -647,14 +681,43 @@ def toggle_order_delivery(
     }
 
 
+@app.delete("/admin/orders/{order_id}")
+def delete_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
+):
+    """Permanently delete an order and its rows without changing product stock."""
+    order = db.query(Order).filter(Order.id == order_id).first()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    db.delete(order)
+    db.commit()
+
+    return {
+        "detail": "Order deleted permanently",
+        "order_id": order_id,
+    }
+
+
 # =================================================
 # ================= CLIENT ========================
 # =================================================
 
 # -------- GET CATEGORIES --------
+@app.get("/client/categories")
+def get_categories(db: Session = Depends(get_db)):
+    return [
+        {"id": category.id, "name": category.name}
+        for category in db.query(Category).order_by(Category.name.asc()).all()
+    ]
+
+
 @app.get("/client/products")
 def get_products(request: Request, db: Session = Depends(get_db)):
-    products = db.query(Product).all()
+    products = db.query(Product).filter(Product.hidden.is_(False)).all()
     
     # Get base URL dynamically from request
     base_url = str(request.base_url).rstrip('/')
@@ -706,8 +769,10 @@ def add_to_cart(
 
     if not product:
         raise HTTPException(404, "Product not found")
-    if product.sold_out:
-        raise HTTPException(400, "Product is sold out")
+    if quantity <= 0:
+        raise HTTPException(400, "Product quantity must be greater than 0")
+    if product.sold_out or product.hidden:
+        raise HTTPException(400, "Product is unavailable")
     if quantity > product.quantity:
         raise HTTPException(400, "Not enough stock")
 
@@ -790,6 +855,7 @@ async def checkout(
     notes: Optional[str] = Form(None),
     total_amount: float = Form(...),
     cart_items: str = Form(...),
+    checkout_token: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Create an order and calculate coupon totals using database values."""
@@ -802,6 +868,29 @@ async def checkout(
 
     if not isinstance(items, list) or not items:
         raise HTTPException(400, "Cart is empty")
+
+    normalized_checkout_token = (checkout_token or "").strip() or None
+    if normalized_checkout_token and (
+        len(normalized_checkout_token) > 64
+        or not re.match(r"^[A-Za-z0-9_-]+$", normalized_checkout_token)
+    ):
+        raise HTTPException(400, "Invalid checkout token")
+
+    # Return the already-created order when the browser retries the same checkout.
+    if normalized_checkout_token:
+        existing_order = db.query(Order).filter(
+            Order.checkout_token == normalized_checkout_token
+        ).first()
+        if existing_order:
+            return {
+                "detail": "Order placed successfully",
+                "order_id": existing_order.id,
+                "subtotal_amount": float(existing_order.subtotal_amount or 0),
+                "discount_amount": float(existing_order.discount_amount or 0),
+                "shipping_amount": float(existing_order.shipping_amount or 0),
+                "total_amount": float(existing_order.total_amount or 0),
+                "duplicate_prevented": True,
+            }
 
     if not re.match(r"^[a-zA-Z\s\u0600-\u06FF]+$", customer_name):
         raise HTTPException(400, "Name can only contain letters and spaces")
@@ -823,17 +912,49 @@ async def checkout(
     prepared_items = []
     subtotal = 0.0
 
+    # Merge duplicate product rows before stock validation. This preserves the
+    # same cart behaviour while preventing the same stock from being counted twice.
+    merged_items = {}
     try:
         for item in items:
             product_id = int(item.get("product_id"))
             quantity = int(item.get("quantity", 0))
-
             if quantity <= 0:
                 raise HTTPException(400, "Product quantity must be greater than 0")
+            merged_items[product_id] = merged_items.get(product_id, 0) + quantity
+    except (TypeError, ValueError, AttributeError):
+        raise HTTPException(400, "Invalid cart item")
 
-            product = db.query(Product).filter(Product.id == product_id).first()
+    if not merged_items:
+        raise HTTPException(400, "Order must contain at least one product")
+
+    try:
+        for product_id, quantity in merged_items.items():
+            product = db.query(Product).filter(Product.id == product_id).with_for_update().first()
+
+            # A simultaneous retry may have been waiting for this stock lock.
+            # Re-check the token after the lock so the retry returns the first
+            # order even when that order consumed the last available item.
+            if normalized_checkout_token:
+                existing_order = db.query(Order).filter(
+                    Order.checkout_token == normalized_checkout_token
+                ).first()
+                if existing_order:
+                    db.rollback()
+                    return {
+                        "detail": "Order placed successfully",
+                        "order_id": existing_order.id,
+                        "subtotal_amount": float(existing_order.subtotal_amount or 0),
+                        "discount_amount": float(existing_order.discount_amount or 0),
+                        "shipping_amount": float(existing_order.shipping_amount or 0),
+                        "total_amount": float(existing_order.total_amount or 0),
+                        "duplicate_prevented": True,
+                    }
+
             if not product:
                 raise HTTPException(404, f"Product {product_id} not found")
+            if product.hidden or product.sold_out:
+                raise HTTPException(400, f"Product {product.name} is unavailable")
             if product.quantity < quantity:
                 raise HTTPException(400, f"Not enough stock for {product.name}")
 
@@ -871,6 +992,7 @@ async def checkout(
             discount_amount=discount_amount,
             shipping_amount=shipping_amount,
             total_amount=calculated_total,
+            checkout_token=normalized_checkout_token,
         )
         db.add(order)
         db.flush()
@@ -896,6 +1018,13 @@ async def checkout(
                 }
             )
 
+        db.flush()
+        saved_item_count = db.query(OrderItem).filter(
+            OrderItem.order_id == order.id
+        ).count()
+        if saved_item_count <= 0:
+            raise HTTPException(400, "Order must contain at least one product")
+
         coupon = coupon_result.get("coupon")
         if coupon is not None:
             coupon.times_used = int(coupon.times_used or 0) + 1
@@ -905,6 +1034,23 @@ async def checkout(
     except HTTPException:
         db.rollback()
         raise
+    except IntegrityError:
+        db.rollback()
+        if normalized_checkout_token:
+            existing_order = db.query(Order).filter(
+                Order.checkout_token == normalized_checkout_token
+            ).first()
+            if existing_order:
+                return {
+                    "detail": "Order placed successfully",
+                    "order_id": existing_order.id,
+                    "subtotal_amount": float(existing_order.subtotal_amount or 0),
+                    "discount_amount": float(existing_order.discount_amount or 0),
+                    "shipping_amount": float(existing_order.shipping_amount or 0),
+                    "total_amount": float(existing_order.total_amount or 0),
+                    "duplicate_prevented": True,
+                }
+        raise HTTPException(409, "Duplicate order request")
     except Exception as error:
         db.rollback()
         raise HTTPException(500, f"Failed to create order: {error}")
@@ -950,7 +1096,7 @@ def calculate_shipping(city: str = Form(...)):
 def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
     from models import Product
     from sqlalchemy.orm import joinedload
-    products = db.query(Product).options(joinedload(Product.images), joinedload(Product.category)).filter(Product.category_id == category_id).all()
+    products = db.query(Product).options(joinedload(Product.images), joinedload(Product.category)).filter(Product.category_id == category_id, Product.hidden.is_(False)).all()
     result = []
     for product in products:
         images = []
@@ -988,7 +1134,8 @@ def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
 @app.put("/admin/orders/{order_id}/cancel")
 def cancel_order(
     order_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin_email: str = Depends(get_current_admin),
 ):
     order = db.query(Order).filter(
         Order.id == order_id
@@ -1009,14 +1156,14 @@ def cancel_order(
             ).first()
 
             if product:
+                if product.quantity < item.quantity:
+                    db.rollback()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Not enough stock to restore order for {product.name}",
+                    )
                 product.quantity -= item.quantity
-
-                if product.quantity < 0:
-                    product.quantity = 0
-
-                product.sold_out = (
-                    product.quantity == 0
-                )
+                product.sold_out = product.quantity == 0
 
         order.is_cancelled = False
 
