@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_
 from typing import List, Optional
 import shutil, os, time, re, asyncio, uuid
 from routers.announcements import router as announcements_router
@@ -275,6 +276,15 @@ try:
 
                 conn.commit()
                 print("✅ hidden column added successfully!")
+
+            # Products created before the hidden column may contain NULL.
+            # Preserve the original visible behaviour for those legacy rows.
+            conn.execute(text("""
+                UPDATE products
+                SET hidden = FALSE
+                WHERE hidden IS NULL;
+            """))
+            conn.commit()
 
     except Exception as e:
         print(f"Note: Could not add columns: {e}")
@@ -724,7 +734,9 @@ def get_categories(db: Session = Depends(get_db)):
 
 @app.get("/client/products")
 def get_products(request: Request, db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.hidden.is_(False)).all()
+    products = db.query(Product).filter(
+        or_(Product.hidden.is_(False), Product.hidden.is_(None))
+    ).all()
     
     # Get base URL dynamically from request
     base_url = str(request.base_url).rstrip('/')
@@ -1103,7 +1115,13 @@ def calculate_shipping(city: str = Form(...)):
 def get_products_by_category(category_id: int, db: Session = Depends(get_db)):
     from models import Product
     from sqlalchemy.orm import joinedload
-    products = db.query(Product).options(joinedload(Product.images), joinedload(Product.category)).filter(Product.category_id == category_id, Product.hidden.is_(False)).all()
+    products = db.query(Product).options(
+        joinedload(Product.images),
+        joinedload(Product.category),
+    ).filter(
+        Product.category_id == category_id,
+        or_(Product.hidden.is_(False), Product.hidden.is_(None)),
+    ).all()
     result = []
     for product in products:
         images = []
