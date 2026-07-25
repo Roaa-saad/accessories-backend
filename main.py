@@ -5,9 +5,19 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import shutil, os, time, re, asyncio, uuid
 from routers.announcements import router as announcements_router
+from routers.coupons import (
+    get_coupon_calculation,
+    router as coupons_router,
+)
 
 from database import Base, engine, SessionLocal
 from storage import upload_to_supabase, delete_from_supabase
+
+try:
+    from email_service import send_order_notification
+except ImportError:
+    async def send_order_notification(order_data):
+        print("Email service is not available; order email was skipped.")
 
 from models import (
     Product,
@@ -15,7 +25,8 @@ from models import (
     Order,
     OrderItem,
     Category,
-    Admin
+    Admin,
+    Coupon
 )
 
 from schemas import AdminLogin
@@ -27,6 +38,7 @@ import re
 # ================= APP =================
 app = FastAPI()
 app.include_router(announcements_router)
+app.include_router(coupons_router)
 
 # ================= CORS =================
 app.add_middleware(
@@ -64,12 +76,41 @@ def clear_uploads_folder(folder_path=UPLOAD_DIR):
 
 # ================= DATABASE =================
 try:
+    from sqlalchemy import inspect, text
+
+    coupons_table_existed = inspect(engine).has_table("coupons")
     Base.metadata.create_all(bind=engine)
+
+    # Preserve the two coupon codes that existed before admin coupon management.
+    # They are inserted only when the coupons table is created for the first time.
+    if not coupons_table_existed:
+        seed_db = SessionLocal()
+        try:
+            seed_db.add_all([
+                Coupon(
+                    code="BACKTOLUMIE",
+                    discount_type="percent",
+                    discount_value=10,
+                    min_order_amount=0,
+                    is_active=True,
+                ),
+                Coupon(
+                    code="FREEGIFT",
+                    discount_type="gift",
+                    discount_value=0,
+                    min_order_amount=0,
+                    is_active=True,
+                ),
+            ])
+            seed_db.commit()
+        except Exception as seed_error:
+            seed_db.rollback()
+            print(f"Note: Could not seed default coupons: {seed_error}")
+        finally:
+            seed_db.close()
 
     # Add missing columns if they don't exist
     try:
-        from sqlalchemy import text
-
         with engine.connect() as conn:
 
             # ================= ORDERS =================
@@ -173,6 +214,21 @@ try:
                 conn.commit()
                 print("✅ is_cancelled column added successfully!")
 
+
+            # Coupon and total breakdown fields for new orders.
+            conn.execute(text("""
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS subtotal_amount FLOAT;
+            """))
+            conn.execute(text("""
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS discount_amount FLOAT;
+            """))
+            conn.execute(text("""
+                ALTER TABLE orders
+                ADD COLUMN IF NOT EXISTS shipping_amount FLOAT;
+            """))
+            conn.commit()
 
             # ================= PRODUCTS =================
 
@@ -334,6 +390,7 @@ class ProductUpdate(BaseModel):
     image_pos_x: Optional[int] = None
     image_pos_y: Optional[int] = None
     image_scale: Optional[float] = None
+    category_name: Optional[str] = None
 
 
 
@@ -347,8 +404,21 @@ def update_product(
     if not product:
         raise HTTPException(404, "Product not found")
 
-    for field, value in data.dict(exclude_unset=True).items():
+    update_data = data.dict(exclude_unset=True)
+    category_name = update_data.pop("category_name", None)
+
+    for field, value in update_data.items():
         setattr(product, field, value)
+
+    if category_name is not None and category_name.strip():
+        category = db.query(Category).filter(
+            Category.name == category_name.strip()
+        ).first()
+        if not category:
+            category = Category(name=category_name.strip())
+            db.add(category)
+            db.flush()
+        product.category_id = category.id
 
     product.sold_out = product.quantity == 0
     db.commit()
@@ -533,6 +603,9 @@ def get_all_orders(db: Session = Depends(get_db)):
             "customer_address": order.customer_address,
             "discount_code": order.discount_code,
             "notes": order.notes,
+            "subtotal_amount": order.subtotal_amount,
+            "discount_amount": order.discount_amount,
+            "shipping_amount": order.shipping_amount,
             "total_amount": order.total_amount,
             "is_delivered": order.is_delivered,
             "is_cancelled": order.is_cancelled,
@@ -651,24 +724,59 @@ def add_to_cart(
     }
 
 
-@app.post("/client/validate-discount")
-def validate_discount(code: str = Form(...)):
-    """Validate discount code and return discount info"""
-    code_upper = code.upper().strip()
-    
-    discount_codes = {
-        "BACKTOLUMIE": {"discount": 10, "type": "percentage"},
-        "FREEGIFT": {"discount": 0, "type": "gift"}
-    }
-    
-    if code_upper in discount_codes:
-        return {
-            "valid": True,
-            "code": code_upper,
-            **discount_codes[code_upper]
-        }
-    else:
-        raise HTTPException(400, "Invalid discount code")
+def get_shipping_charge_for_city(city: str) -> float:
+    city_lower = (city or "").lower().strip()
+
+    cairo_giza = [
+        "cairo", "القاهرة", "giza", "الجيزة",
+        "6th october", "sheikh zayed", "new cairo", "shorouk",
+        "obour", "badr", "new capital",
+    ]
+    delta_cities = [
+        "alexandria", "الإسكندرية", "alex", "tanta", "طنطا",
+        "mansoura", "المنصورة", "zagazig", "الزقازيق",
+        "ismailia", "الإسماعيلية", "suez", "السويس",
+        "port said", "بورسعيد", "damietta", "دمياط",
+        "kafr el sheikh", "كفر الشيخ", "beheira", "البحيرة",
+        "gharbia", "الغربية", "dakahlia", "الدقهلية",
+        "sharqia", "الشرقية", "qalyubia", "القليوبية",
+        "monufia", "المنوفية",
+    ]
+    upper_egypt = [
+        "fayoum", "الفيوم", "beni suef", "بني سويف",
+        "minya", "المنيا", "assiut", "أسيوط", "sohag", "سوهاج",
+        "qena", "قنا",
+    ]
+    hurghada = ["hurghada", "الغردقة"]
+    aswan = ["aswan", "أسوان"]
+    matrouh = ["matrouh", "مطروح", "marsa matrouh", "مرسى مطروح"]
+    north_coast = ["north coast", "الساحل الشمالي"]
+    new_valley = ["new valley", "الوادي الجديد"]
+    remote_145 = [
+        "red sea", "البحر الأحمر", "sharm el sheikh", "شرم الشيخ",
+        "arish", "العريش", "el arish", "north sinai", "شمال سيناء",
+        "south sinai", "جنوب سيناء",
+    ]
+
+    if any(value in city_lower for value in cairo_giza):
+        return 75
+    if any(value in city_lower for value in delta_cities):
+        return 85
+    if any(value in city_lower for value in upper_egypt):
+        return 95
+    if any(value in city_lower for value in hurghada):
+        return 125
+    if any(value in city_lower for value in aswan):
+        return 125
+    if any(value in city_lower for value in matrouh):
+        return 130
+    if any(value in city_lower for value in north_coast):
+        return 135
+    if any(value in city_lower for value in new_valley):
+        return 135
+    if any(value in city_lower for value in remote_145):
+        return 145
+    return 85
 
 
 @app.post("/client/checkout")
@@ -681,252 +789,162 @@ async def checkout(
     discount_code: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     total_amount: float = Form(...),
-    cart_items: str = Form(...),  # JSON string from frontend
-    db: Session = Depends(get_db)
+    cart_items: str = Form(...),
+    db: Session = Depends(get_db),
 ):
-    """
-    Checkout endpoint - receives cart and total from frontend
-    """
-    
-    # Parse cart_items JSON string
+    """Create an order and calculate coupon totals using database values."""
     import json
+
     try:
         items = json.loads(cart_items)
     except json.JSONDecodeError:
         raise HTTPException(400, "Invalid cart_items format")
-    
-    # Validate cart is not empty
-    if not items or len(items) == 0:
+
+    if not isinstance(items, list) or not items:
         raise HTTPException(400, "Cart is empty")
-    
-    # Validate customer name (letters and spaces only, no numbers/special chars)
-    if not re.match(r'^[a-zA-Z\s\u0600-\u06FF]+$', customer_name):
+
+    if not re.match(r"^[a-zA-Z\s\u0600-\u06FF]+$", customer_name):
         raise HTTPException(400, "Name can only contain letters and spaces")
-    
-    # Validate city (at least 2 characters)
+
     if not customer_city or len(customer_city.strip()) < 2:
         raise HTTPException(400, "City must be at least 2 characters long")
-    
-    # Validate email format
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     if not re.match(email_pattern, customer_email):
         raise HTTPException(400, "Invalid email format")
-    
-    # Validate phone number (10-15 digits, can include +, spaces, dashes)
-    phone_digits = re.sub(r'[\s\-\+\(\)]', '', customer_phone)
-    if not phone_digits.isdigit() or len(phone_digits) < 10 or len(phone_digits) > 15:
+
+    phone_digits = re.sub(r"[\s\-\+\(\)]", "", customer_phone)
+    if not phone_digits.isdigit() or not 10 <= len(phone_digits) <= 15:
         raise HTTPException(400, "Phone number must be 10-15 digits")
-    
-    # Validate address (at least 10 characters)
+
     if not customer_address or len(customer_address.strip()) < 10:
         raise HTTPException(400, "Address must be at least 10 characters long")
 
-    order = Order(
-        customer_name=customer_name.strip(),
-        customer_email=customer_email.lower().strip(),
-        customer_city=customer_city.strip(),
-        customer_phone=customer_phone.strip(),
-        customer_address=customer_address.strip(),
-        discount_code=discount_code.strip() if discount_code else None,
-        notes=notes.strip() if notes else None,
-        total_amount=total_amount  # Store frontend-calculated total
-    )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
+    prepared_items = []
+    subtotal = 0.0
 
-    order_items = []
-    for item in items:
-        product = db.query(Product).filter(Product.id == item['product_id']).first()
-        
-        if not product:
-            raise HTTPException(404, f"Product {item['product_id']} not found")
-        if product.quantity < item['quantity']:
-            raise HTTPException(400, f"Not enough stock for {product.name}")
-        
-        product.quantity -= item['quantity']
-        product.sold_out = product.quantity == 0
+    try:
+        for item in items:
+            product_id = int(item.get("product_id"))
+            quantity = int(item.get("quantity", 0))
 
-        order_item = OrderItem(
-            order_id=order.id,
-            product_id=product.id,
-            quantity=item['quantity'],
-            price=item['price']  # Store the actual price paid from frontend (includes discounts)
+            if quantity <= 0:
+                raise HTTPException(400, "Product quantity must be greater than 0")
+
+            product = db.query(Product).filter(Product.id == product_id).first()
+            if not product:
+                raise HTTPException(404, f"Product {product_id} not found")
+            if product.quantity < quantity:
+                raise HTTPException(400, f"Not enough stock for {product.name}")
+
+            unit_price = (
+                float(product.discount_price)
+                if product.discount_price is not None and product.discount_price > 0
+                else float(product.price)
+            )
+            subtotal += unit_price * quantity
+            prepared_items.append((product, quantity, unit_price))
+
+        subtotal = round(subtotal, 2)
+        coupon_result = get_coupon_calculation(
+            db,
+            discount_code,
+            subtotal,
+            raise_if_invalid=bool((discount_code or "").strip()),
         )
-        db.add(order_item)
-        
-        # Store item details for email
-        order_items.append({
-            "product_name": product.name,
-            "quantity": item['quantity'],
-            "price": item['price']  # Use the price from cart (historical price paid)
-        })
+        discount_amount = round(float(coupon_result["discount_amount"]), 2)
+        subtotal_after_discount = round(subtotal - discount_amount, 2)
 
-    db.commit()
-    
-    # Send email notification to admin in background (non-blocking)
-    asyncio.create_task(send_order_notification({
+        base_shipping = get_shipping_charge_for_city(customer_city)
+        shipping_amount = 0 if subtotal_after_discount >= 900 else base_shipping
+        calculated_total = round(subtotal_after_discount + shipping_amount, 2)
+
+        order = Order(
+            customer_name=customer_name.strip(),
+            customer_email=customer_email.lower().strip(),
+            customer_city=customer_city.strip(),
+            customer_phone=customer_phone.strip(),
+            customer_address=customer_address.strip(),
+            discount_code=coupon_result["code"] or None,
+            notes=notes.strip() if notes else None,
+            subtotal_amount=subtotal,
+            discount_amount=discount_amount,
+            shipping_amount=shipping_amount,
+            total_amount=calculated_total,
+        )
+        db.add(order)
+        db.flush()
+
+        email_items = []
+        for product, quantity, unit_price in prepared_items:
+            product.quantity -= quantity
+            product.sold_out = product.quantity == 0
+
+            db.add(
+                OrderItem(
+                    order_id=order.id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    price=unit_price,
+                )
+            )
+            email_items.append(
+                {
+                    "product_name": product.name,
+                    "quantity": quantity,
+                    "price": unit_price,
+                }
+            )
+
+        coupon = coupon_result.get("coupon")
+        if coupon is not None:
+            coupon.times_used = int(coupon.times_used or 0) + 1
+
+        db.commit()
+        db.refresh(order)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as error:
+        db.rollback()
+        raise HTTPException(500, f"Failed to create order: {error}")
+
+    asyncio.create_task(
+        send_order_notification(
+            {
+                "order_id": order.id,
+                "customer_name": customer_name,
+                "customer_email": customer_email,
+                "customer_phone": customer_phone,
+                "customer_city": customer_city,
+                "customer_address": customer_address,
+                "discount_code": coupon_result["code"] or None,
+                "discount_amount": discount_amount,
+                "shipping_amount": shipping_amount,
+                "total_amount": calculated_total,
+                "notes": notes,
+                "items": email_items,
+            }
+        )
+    )
+
+    return {
+        "detail": "Order placed successfully",
         "order_id": order.id,
-        "customer_name": customer_name,
-        "customer_email": customer_email,
-        "customer_phone": customer_phone,
-        "customer_city": customer_city,
-        "customer_address": customer_address,
-        "discount_code": discount_code,
-        "notes": notes,
-        "items": order_items
-    }))
-    
-    return {"detail": "Order placed successfully", "order_id": order.id}
+        "subtotal_amount": subtotal,
+        "discount_amount": discount_amount,
+        "shipping_amount": shipping_amount,
+        "total_amount": calculated_total,
+    }
 
 
 @app.post("/client/calculate-shipping")
 def calculate_shipping(city: str = Form(...)):
-    """Calculate shipping charge based on city"""
+    return {
+        "shipping_charge": get_shipping_charge_for_city(city),
+        "city": city,
+    }
 
-    city_lower = city.lower().strip()
-
-    # Cairo & Giza
-    cairo_giza = [
-        'cairo', 'القاهرة',
-        'giza', 'الجيزة'
-    ]
-
-    # Delta + Canal + Alexandria
-    delta_cities = [
-        'alexandria', 'الإسكندرية', 'alex',
-        'tanta', 'طنطا',
-        'mansoura', 'المنصورة',
-        'zagazig', 'الزقازيق',
-        'ismailia', 'الإسماعيلية',
-        'suez', 'السويس',
-        'port said', 'بورسعيد',
-        'damietta', 'دمياط',
-        'kafr el sheikh', 'كفر الشيخ',
-        'beheira', 'البحيرة',
-        'gharbia', 'الغربية',
-        'dakahlia', 'الدقهلية',
-        'sharqia', 'الشرقية',
-        'qalyubia', 'القليوبية',
-        'monufia', 'المنوفية'
-    ]
-
-    # Upper Egypt
-    upper_egypt = [
-        'fayoum', 'الفيوم',
-        'beni suef', 'بني سويف',
-        'minya', 'المنيا',
-        'assiut', 'أسيوط',
-        'sohag', 'سوهاج',
-        'qena', 'قنا'
-    ]
-
-    # Hurghada
-    hurghada = [
-        'hurghada',
-        'الغردقة'
-    ]
-
-    # Aswan
-    aswan = [
-        'aswan',
-        'أسوان'
-    ]
-
-    # Marsa Matrouh
-    matrouh = [
-        'matrouh',
-        'مطروح',
-        'marsa matrouh',
-        'مرسى مطروح'
-    ]
-
-    # North Coast
-    north_coast = [
-        'north coast',
-        'الساحل الشمالي'
-    ]
-
-    # New Valley
-    new_valley = [
-        'new valley',
-        'الوادي الجديد'
-    ]
-
-    # Remote Areas
-    remote_145 = [
-        'red sea',
-        'البحر الأحمر',
-        'sharm el sheikh',
-        'شرم الشيخ',
-        'arish',
-        'العريش',
-        'el arish',
-        'north sinai',
-        'شمال سيناء',
-        'south sinai',
-        'جنوب سيناء'
-    ]
-
-    if any(c in city_lower for c in cairo_giza):
-        return {
-            "shipping_charge": 75,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in delta_cities):
-        return {
-            "shipping_charge": 85,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in upper_egypt):
-        return {
-            "shipping_charge": 95,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in hurghada):
-        return {
-            "shipping_charge": 125,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in aswan):
-        return {
-            "shipping_charge": 125,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in matrouh):
-        return {
-            "shipping_charge": 130,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in north_coast):
-        return {
-            "shipping_charge": 135,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in new_valley):
-        return {
-            "shipping_charge": 135,
-            "city": city
-        }
-
-    elif any(c in city_lower for c in remote_145):
-        return {
-            "shipping_charge": 145,
-            "city": city
-        }
-
-    else:
-        return {
-            "shipping_charge": 85,
-            "city": city
-        }
 
 @app.get("/client/categories/{category_id}/products", response_model=list[dict])
 def get_products_by_category(category_id: int, db: Session = Depends(get_db)):

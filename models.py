@@ -120,6 +120,9 @@ class Order(Base):
 
     discount_code = Column(String, nullable=True)
     notes = Column(String, nullable=True)
+    subtotal_amount = Column(Float, nullable=True)
+    discount_amount = Column(Float, nullable=True)
+    shipping_amount = Column(Float, nullable=True)
     total_amount = Column(Float, nullable=True)
 
     is_delivered = Column(Boolean, default=False)
@@ -211,3 +214,25 @@ class Announcement(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
+
+# ================= COUPONS =================
+class Coupon(Base):
+    __tablename__ = "coupons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, index=True, nullable=False)
+    discount_type = Column(String(20), nullable=False)
+    discount_value = Column(Float, nullable=False, default=0)
+    min_order_amount = Column(Float, nullable=False, default=0)
+    usage_limit = Column(Integer, nullable=True)
+    times_used = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
