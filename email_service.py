@@ -1,155 +1,308 @@
+import asyncio
+import html
 import os
-import base64
+from typing import Any
+
 import httpx
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# Gmail API configuration - 100% FREE, uses OAuth tokens
-GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN")
-GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID")
-GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET")
-GMAIL_USER_EMAIL = os.getenv("GMAIL_USER_EMAIL", "roaam5182@gmail.com")
-ADMIN_EMAILS = ["roaam5182@gmail.com", "mahasaad3343@gmail.com"]
 
 
-async def get_gmail_access_token():
-    """Get fresh access token from refresh token"""
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "client_id": GMAIL_CLIENT_ID,
-                "client_secret": GMAIL_CLIENT_SECRET,
-                "refresh_token": GMAIL_REFRESH_TOKEN,
-                "grant_type": "refresh_token"
-            }
-        )
-        if response.status_code == 200:
-            return response.json()["access_token"]
-        else:
-            raise Exception(f"Failed to get access token: {response.text}")
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
-async def send_order_notification(order_data: dict):
-    """
-    Send order notification via Gmail API
-    100% FREE - No SMTP, uses OAuth tokens
-    """
-    if not all([GMAIL_REFRESH_TOKEN, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET]):
-        print("⚠️ Warning: Gmail API credentials not configured. Email not sent.")
-        return False
-    
+def _clean(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _safe(value: Any) -> str:
+    return html.escape(_clean(value), quote=True)
+
+
+def _money(value: Any) -> str:
     try:
-        # Get access token
-        access_token = await get_gmail_access_token()
-        
-        # Calculate total
-        total = sum(item['quantity'] * item['price'] for item in order_data['items'])
-        
-        # Create HTML email body
-        html = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-                <h2 style="color: #4CAF50; text-align: center;">🛒 New Order Received!</h2>
-                
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h3 style="margin-top: 0;">Order Details</h3>
-                    <p><strong>Order ID:</strong> #{order_data['order_id']}</p>
-                </div>
-                
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h3 style="margin-top: 0;">Customer Information</h3>
-                    <p><strong>Name:</strong> {order_data['customer_name']}</p>
-                    <p><strong>Email:</strong> {order_data['customer_email']}</p>
-                    <p><strong>Phone:</strong> {order_data['customer_phone']}</p>
-                    <p><strong>City:</strong> {order_data.get('customer_city', 'N/A')}</p>
-                    <p><strong>Address:</strong> {order_data['customer_address']}</p>
-                    {f"<p><strong>Discount Code:</strong> {order_data['discount_code']}</p>" if order_data.get('discount_code') else ''}
-                    {f"<p><strong>Notes:</strong> {order_data['notes']}</p>" if order_data.get('notes') else ''}
-                </div>
-                
-                <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h3 style="margin-top: 0;">Order Items</h3>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background-color: #4CAF50; color: white;">
-                                <th style="padding: 10px; text-align: left;">Product</th>
-                                <th style="padding: 10px; text-align: center;">Quantity</th>
-                                <th style="padding: 10px; text-align: right;">Price</th>
-                                <th style="padding: 10px; text-align: right;">Subtotal</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+        return f"{float(value or 0):,.2f} EGP"
+    except (TypeError, ValueError):
+        return "0.00 EGP"
+
+
+def _items_rows(items: list[dict]) -> str:
+    if not items:
+        return """
+        <tr>
+            <td colspan="4" style="padding:14px;border:1px solid #ead7de;text-align:center;">
+                No products found
+            </td>
+        </tr>
         """
-        
-        for item in order_data['items']:
-            subtotal = item['quantity'] * item['price']
-            html += f"""
-                            <tr style="border-bottom: 1px solid #ddd;">
-                                <td style="padding: 10px;">{item['product_name']}</td>
-                                <td style="padding: 10px; text-align: center;">{item['quantity']}</td>
-                                <td style="padding: 10px; text-align: right;">{item['price']} EGP</td>
-                                <td style="padding: 10px; text-align: right;">{subtotal} EGP</td>
-                            </tr>
+
+    rows: list[str] = []
+    for item in items:
+        name = _safe(item.get("product_name") or "Product")
+        quantity = int(item.get("quantity") or 0)
+        price = float(item.get("price") or 0)
+        line_total = price * quantity
+
+        rows.append(
+            f"""
+            <tr>
+                <td style="padding:10px;border:1px solid #ead7de;">{name}</td>
+                <td style="padding:10px;border:1px solid #ead7de;text-align:center;">{quantity}</td>
+                <td style="padding:10px;border:1px solid #ead7de;text-align:center;">{_money(price)}</td>
+                <td style="padding:10px;border:1px solid #ead7de;text-align:center;">{_money(line_total)}</td>
+            </tr>
             """
-        
-        html += f"""
-                        </tbody>
-                        <tfoot>
-                            <tr style="font-weight: bold; background-color: #f0f0f0;">
-                                <td colspan="3" style="padding: 10px; text-align: right;">Total:</td>
-                                <td style="padding: 10px; text-align: right;">{total} EGP</td>
-                            </tr>
-                        </tfoot>
-                    </table>
+        )
+
+    return "".join(rows)
+
+
+def _email_shell(title: str, body: str) -> str:
+    return f"""
+    <!doctype html>
+    <html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{html.escape(title)}</title>
+    </head>
+    <body style="margin:0;background:#f8f3f5;font-family:Arial,Helvetica,sans-serif;color:#2a2024;">
+        <div style="max-width:720px;margin:0 auto;padding:24px 12px;">
+            <div style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ead7de;">
+                <div style="background:#8b2f52;color:#ffffff;padding:22px;text-align:center;">
+                    <div style="font-size:26px;font-weight:700;letter-spacing:2px;">LUMIIE</div>
+                    <div style="margin-top:6px;font-size:15px;">{html.escape(title)}</div>
                 </div>
-                
-                <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
-                    <p style="color: #666; font-size: 12px;">
-                        This is an automated notification from your Accessories Store.
-                    </p>
+                <div style="padding:24px;">
+                    {body}
                 </div>
             </div>
-        </body>
-        </html>
-        """
-        
-        # Create email message
-        message = MIMEMultipart("alternative")
-        message["From"] = GMAIL_USER_EMAIL
-        message["To"] = ", ".join(ADMIN_EMAILS)
-        message["Subject"] = f"🛒 New Order #{order_data['order_id']} - {order_data['customer_name']}"
-        message.attach(MIMEText(html, "html"))
-        
-        # Encode message for Gmail API
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-        
-        print(f"🔄 Sending email via Gmail API to {', '.join(ADMIN_EMAILS)}")
-        
-        # Send via Gmail API
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json"
-                },
-                json={"raw": raw_message}
-            )
-        
-        if response.status_code == 200:
-            print(f"✅ Email sent successfully via Gmail API to {', '.join(ADMIN_EMAILS)}")
-            return True
-        else:
-            print(f"❌ Gmail API error: {response.status_code} - {response.text}")
-            return False
-        
-    except Exception as e:
-        print(f"❌ Error sending email: {type(e).__name__}: {str(e)}")
-        import traceback
-        print(f"Full traceback: {traceback.format_exc()}")
+            <p style="text-align:center;color:#7d6c73;font-size:12px;margin:14px 0 0;">
+                This is an automatic transactional email from LUMIIE.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+
+def _order_table(order_data: dict) -> str:
+    return f"""
+    <table style="width:100%;border-collapse:collapse;margin-top:18px;font-size:14px;">
+        <thead>
+            <tr style="background:#f7edf1;">
+                <th style="padding:10px;border:1px solid #ead7de;text-align:left;">Product</th>
+                <th style="padding:10px;border:1px solid #ead7de;">Qty</th>
+                <th style="padding:10px;border:1px solid #ead7de;">Price</th>
+                <th style="padding:10px;border:1px solid #ead7de;">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {_items_rows(order_data.get("items") or [])}
+        </tbody>
+    </table>
+    """
+
+
+def build_admin_email(order_data: dict) -> str:
+    order_id = _safe(order_data.get("order_id"))
+    coupon = _safe(order_data.get("discount_code") or "No coupon")
+    notes = _safe(order_data.get("notes") or "No notes")
+
+    body = f"""
+        <h2 style="margin:0 0 12px;color:#8b2f52;">New order #{order_id}</h2>
+        <p style="margin:0 0 18px;line-height:1.7;">
+            A new order was placed successfully on the website.
+        </p>
+
+        <div style="background:#fff8fb;border:1px solid #ead7de;border-radius:12px;padding:16px;line-height:1.9;">
+            <div><strong>Customer:</strong> {_safe(order_data.get("customer_name"))}</div>
+            <div><strong>Email:</strong> {_safe(order_data.get("customer_email"))}</div>
+            <div><strong>Phone:</strong> {_safe(order_data.get("customer_phone"))}</div>
+            <div><strong>City:</strong> {_safe(order_data.get("customer_city"))}</div>
+            <div><strong>Address:</strong> {_safe(order_data.get("customer_address"))}</div>
+            <div><strong>Coupon:</strong> {coupon}</div>
+            <div><strong>Notes:</strong> {notes}</div>
+        </div>
+
+        {_order_table(order_data)}
+
+        <div style="margin-top:18px;background:#f7edf1;border-radius:12px;padding:16px;line-height:1.9;">
+            <div><strong>Discount:</strong> {_money(order_data.get("discount_amount"))}</div>
+            <div><strong>Shipping:</strong> {_money(order_data.get("shipping_amount"))}</div>
+            <div style="font-size:18px;color:#8b2f52;"><strong>Order total:</strong> {_money(order_data.get("total_amount"))}</div>
+        </div>
+    """
+
+    return _email_shell(f"New order #{order_id}", body)
+
+
+def build_customer_email(order_data: dict) -> str:
+    order_id = _safe(order_data.get("order_id"))
+    customer_name = _safe(order_data.get("customer_name") or "Customer")
+
+    body = f"""
+        <h2 style="margin:0 0 12px;color:#8b2f52;">Thank you, {customer_name} 🤍</h2>
+        <p style="margin:0;line-height:1.8;">
+            We received your order <strong>#{order_id}</strong> successfully.
+            No confirmation action is required from you. Our team will contact you if needed.
+        </p>
+
+        {_order_table(order_data)}
+
+        <div style="margin-top:18px;background:#f7edf1;border-radius:12px;padding:16px;line-height:1.9;">
+            <div><strong>Delivery city:</strong> {_safe(order_data.get("customer_city"))}</div>
+            <div><strong>Delivery address:</strong> {_safe(order_data.get("customer_address"))}</div>
+            <div><strong>Discount:</strong> {_money(order_data.get("discount_amount"))}</div>
+            <div><strong>Shipping:</strong> {_money(order_data.get("shipping_amount"))}</div>
+            <div style="font-size:18px;color:#8b2f52;"><strong>Total:</strong> {_money(order_data.get("total_amount"))}</div>
+        </div>
+
+        <p style="margin:22px 0 0;line-height:1.8;text-align:center;">
+            Thank you for shopping with LUMIIE.
+        </p>
+    """
+
+    return _email_shell(f"Order #{order_id} received", body)
+
+
+async def _send_email(
+    *,
+    recipient_email: str,
+    recipient_name: str,
+    subject: str,
+    html_content: str,
+) -> bool:
+    api_key = _clean(os.getenv("BREVO_API_KEY"))
+    sender_email = _clean(os.getenv("BREVO_SENDER_EMAIL")).lower()
+    sender_name = _clean(os.getenv("BREVO_SENDER_NAME") or "LUMIIE")
+    reply_to_email = _clean(os.getenv("BREVO_REPLY_TO_EMAIL")).lower()
+
+    if not api_key:
+        print("BREVO: BREVO_API_KEY is missing", flush=True)
         return False
+
+    if not sender_email:
+        print("BREVO: BREVO_SENDER_EMAIL is missing", flush=True)
+        return False
+
+    if not recipient_email:
+        print("BREVO: recipient email is missing", flush=True)
+        return False
+
+    payload: dict[str, Any] = {
+        "sender": {
+            "name": sender_name,
+            "email": sender_email,
+        },
+        "to": [
+            {
+                "name": recipient_name or "Customer",
+                "email": recipient_email.lower().strip(),
+            }
+        ],
+        "subject": subject,
+        "htmlContent": html_content,
+        "tags": ["lumie-order"],
+    }
+
+    if reply_to_email:
+        payload["replyTo"] = {
+            "name": sender_name,
+            "email": reply_to_email,
+        }
+
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "api-key": api_key,
+    }
+
+    retryable_statuses = {408, 425, 429, 500, 502, 503, 504}
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for attempt in range(1, 4):
+            try:
+                response = await client.post(
+                    BREVO_API_URL,
+                    headers=headers,
+                    json=payload,
+                )
+
+                if 200 <= response.status_code < 300:
+                    print(
+                        f"BREVO: email accepted for {recipient_email}",
+                        flush=True,
+                    )
+                    return True
+
+                print(
+                    "BREVO ERROR:",
+                    response.status_code,
+                    response.text,
+                    flush=True,
+                )
+
+                if response.status_code not in retryable_statuses:
+                    return False
+
+            except (httpx.TimeoutException, httpx.RequestError) as error:
+                print(f"BREVO NETWORK ERROR: {error}", flush=True)
+            except Exception as error:
+                print(f"BREVO UNEXPECTED ERROR: {error}", flush=True)
+                return False
+
+            if attempt < 3:
+                await asyncio.sleep(attempt * 2)
+
+    return False
+
+
+async def send_order_notification(order_data: dict) -> None:
+    """
+    Automatically sends two transactional emails after the order is saved:
+    1) admin notification
+    2) customer order details
+
+    Email failure never cancels or changes the saved order.
+    """
+    try:
+        order_id = _clean(order_data.get("order_id") or "New")
+        admin_email = _clean(os.getenv("ADMIN_EMAIL")).lower()
+        customer_email = _clean(order_data.get("customer_email")).lower()
+        customer_name = _clean(order_data.get("customer_name") or "Customer")
+        sender_name = _clean(os.getenv("BREVO_SENDER_NAME") or "LUMIIE")
+
+        tasks = []
+
+        if admin_email:
+            tasks.append(
+                _send_email(
+                    recipient_email=admin_email,
+                    recipient_name="LUMIIE Admin",
+                    subject=f"New order #{order_id} - {sender_name}",
+                    html_content=build_admin_email(order_data),
+                )
+            )
+        else:
+            print("BREVO: ADMIN_EMAIL is missing", flush=True)
+
+        if customer_email:
+            tasks.append(
+                _send_email(
+                    recipient_email=customer_email,
+                    recipient_name=customer_name,
+                    subject=f"We received your order #{order_id} - {sender_name}",
+                    html_content=build_customer_email(order_data),
+                )
+            )
+        else:
+            print(
+                f"BREVO: customer email missing for order #{order_id}",
+                flush=True,
+            )
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    except Exception as error:
+        # The order is already saved; email problems must not affect checkout.
+        print(f"BREVO ORDER EMAIL ERROR: {error}", flush=True)
