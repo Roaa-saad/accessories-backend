@@ -884,9 +884,8 @@ def get_shipping_charge_for_city(city: str) -> float:
     cairo_giza = [
         "cairo", "القاهرة", "giza", "الجيزة",
         "6th october", "sheikh zayed", "new cairo", "shorouk",
-        "obour", "badr", "new capital",
     ]
-    alex =["alexandria", "الإسكندرية", "alex",]
+    alex =["alexandria", "الإسكندرية", "alex","obour", "badr", "new capital",]
     delta_cities = [
         "tanta", "طنطا",
         "mansoura", "المنصورة", "zagazig", "الزقازيق",
@@ -914,7 +913,7 @@ def get_shipping_charge_for_city(city: str) -> float:
     ]
 
     if any(value in city_lower for value in cairo_giza):
-        return 90
+        return 75
     if any(value in city_lower for value in alex):
         return 85
     if any(value in city_lower for value in delta_cities):
@@ -1069,7 +1068,7 @@ async def checkout(
         subtotal_after_discount = round(subtotal - discount_amount, 2)
 
         base_shipping = get_shipping_charge_for_city(customer_city)
-        shipping_amount = 0 if subtotal_after_discount >= 900 else base_shipping
+        shipping_amount = 0 if subtotal_after_discount >= 950 else base_shipping
         calculated_total = round(subtotal_after_discount + shipping_amount, 2)
 
         order = Order(
