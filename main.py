@@ -883,9 +883,10 @@ def get_shipping_charge_for_city(city: str) -> float:
 
     cairo_giza = [
         "cairo", "القاهرة", "giza", "الجيزة",
-        "6th october", "sheikh zayed", "new cairo", "shorouk",
+        
     ]
-    alex =["alexandria", "الإسكندرية", "alex","obour", "badr", "new capital",]
+    alex =["alexandria", "الإسكندرية", "alex"]
+    obour =["obour", "badr", "new capital","6th october", "sheikh zayed", "new cairo", "shorouk",]
     delta_cities = [
         "tanta", "طنطا",
         "mansoura", "المنصورة", "zagazig", "الزقازيق",
@@ -914,8 +915,10 @@ def get_shipping_charge_for_city(city: str) -> float:
 
     if any(value in city_lower for value in cairo_giza):
         return 75
+    if any(value in city_lower for value in obour):
+        return 80
     if any(value in city_lower for value in alex):
-        return 85
+        return 90
     if any(value in city_lower for value in delta_cities):
         return 90
     if any(value in city_lower for value in upper_egypt):
